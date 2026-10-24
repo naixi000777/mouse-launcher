@@ -1,0 +1,15 @@
+# 构建产物
+*.exe
+*.zip
+*.tmp
+*.part
+
+# 本地配置与日志
+*.ini
+error.log
+*.log
+
+# VS
+.vs/
+*.suo
+*.user
