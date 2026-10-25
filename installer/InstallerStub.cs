@@ -89,7 +89,7 @@ namespace MouseLauncherInstaller
             scT.InvokeMember("TargetPath", BindingFlags.SetProperty, null, sc, new object[] { exe });
             scT.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, sc, new object[] { dir });
             scT.InvokeMember("IconLocation", BindingFlags.SetProperty, null, sc, new object[] { exe + ",0" });
-            scT.InvokeMember("Description", BindingFlags.SetProperty, null, sc, new object[] { "老鼠启动器 by osaka" });
+            scT.InvokeMember("Description", BindingFlags.SetProperty, null, sc, new object[] { "老鼠启动器 by Naixi" });
             scT.InvokeMember("Save", BindingFlags.InvokeMethod, null, sc, null);
         }
     }
@@ -134,7 +134,7 @@ namespace MouseLauncherInstaller
                 titleX = 60;
             }
             Label title = new Label();
-            title.Text = "老鼠启动器 by osaka";
+            title.Text = "老鼠启动器 by Naixi";
             title.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold);
             title.ForeColor = Color.FromArgb(86, 156, 255);
             title.SetBounds(titleX, 16, 440, 30);

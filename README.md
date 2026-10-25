@@ -1,6 +1,6 @@
 # 老鼠启动器 MouseLauncher 🐭
 
-by osaka
+by Naixi
 
 一个单文件 C# 写的 Minecraft Java 版启动器，深色主题，与 PCL2 共用 `.minecraft` 目录。无需安装 .NET SDK——用 Windows 自带的 .NET Framework 编译器即可构建。
 
