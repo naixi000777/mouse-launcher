@@ -2055,7 +2055,8 @@ namespace MouseLauncher
 
         public MouseSlider()
         {
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
             Cursor = Cursors.Hand;
         }
 
@@ -2125,12 +2126,14 @@ namespace MouseLauncher
     class NavItem : Control
     {
         public bool Active;
+        bool hover;
         public string Icon;
         public string Title;
         public NavItem(string icon, string title)
         {
             Icon = icon; Title = title;
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
             Cursor = Cursors.Hand;
             Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold);
             Height = 46;
@@ -2140,16 +2143,20 @@ namespace MouseLauncher
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             if (Active)
             {
-                using (SolidBrush b = new SolidBrush(Color.FromArgb(50, 50, 60))) e.Graphics.FillRectangle(b, ClientRectangle);
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(70, 40, 40, 54))) e.Graphics.FillRectangle(b, ClientRectangle);
                 using (SolidBrush b = new SolidBrush(Theme.Accent)) e.Graphics.FillRectangle(b, 0, 8, 4, Height - 16);
+            }
+            else if (hover)
+            {
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(35, 255, 255, 255))) e.Graphics.FillRectangle(b, ClientRectangle);
             }
             TextRenderer.DrawText(e.Graphics, Icon, new Font("Segoe UI Emoji", 13F), new Rectangle(14, 0, 34, Height),
                 Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter);
             TextRenderer.DrawText(e.Graphics, Title, Font, new Rectangle(52, 0, Width - 60, Height),
                 Active ? Theme.Text : Theme.TextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
         }
-        protected override void OnMouseEnter(EventArgs e) { Invalidate(); base.OnMouseEnter(e); }
-        protected override void OnMouseLeave(EventArgs e) { Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; Invalidate(); base.OnMouseLeave(e); }
     }
 
     // ---------- 主窗口 ----------
@@ -2200,6 +2207,8 @@ namespace MouseLauncher
             Width = 1120; Height = 640;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1120, 640);
+            DoubleBuffered = true;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
             try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             try
             {
@@ -2216,6 +2225,11 @@ namespace MouseLauncher
             catch { }
             BackColor = Theme.Bg;
             ForeColor = Theme.Text;
+            Region = new Region(Util.Round(new RectangleF(0, 0, Width, Height), 14)); // 圆角窗口
+            FormClosing += delegate(object s, FormClosingEventArgs e2)
+            {
+                try { Region.Dispose(); } catch { }
+            };
             Font = new Font("Microsoft YaHei UI", 9.5F);
             DoubleBuffered = true;
             FormBorderStyle = FormBorderStyle.None;
@@ -2236,16 +2250,10 @@ namespace MouseLauncher
             DarkCombo(javaBox); DarkCombo(versionBox); DarkCombo(filterBox); DarkCombo(fabricBox);
             DarkCombo(modTypeBox); DarkCombo(targetVerBox);
             DarkList(verList); DarkList(modResultList); DarkList(modVerList);
-            // 各页微渐变底 (增加层次, 幅度极小避免与标签底色冲突)
+            // 透明链: 页面与容器透明, 极光从窗体透出 (玻璃卡才生效)
+            pageHost.BackColor = Color.Transparent;
             foreach (Panel pg in new Panel[] { launchPage, downloadPage, modPage, settingsPage, mpPage })
-            {
-                Panel pgp = pg;
-                pgp.Paint += delegate(object s, PaintEventArgs e)
-                {
-                    using (LinearGradientBrush g = new LinearGradientBrush(pgp.ClientRectangle, Color.FromArgb(38, 38, 46), Color.FromArgb(41, 41, 52), 55f))
-                        e.Graphics.FillRectangle(g, pgp.ClientRectangle);
-                };
-            }
+                pg.BackColor = Color.Transparent;
             StartLanWatcher();
 
             // 恢复上次窗口位置 (仅当落点在某个屏幕工作区内)
@@ -2268,6 +2276,37 @@ namespace MouseLauncher
             ScanVersions();
             Log("老鼠启动器 v1.1 就绪 by osaka  游戏目录: " + Settings.McDir);
             FormClosed += delegate { Settings.WinPos = Left + "," + Top; Settings.Save(); };
+        }
+
+        // 极光背景: 深底渐变 + 三团柔光 (画在窗体最底层, 玻璃卡透出)
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            Rectangle r = ClientRectangle;
+            if (r.Width <= 0 || r.Height <= 0) return;
+            using (LinearGradientBrush g = new LinearGradientBrush(r, Color.FromArgb(22, 22, 34), Color.FromArgb(34, 34, 54), 72f))
+                e.Graphics.FillRectangle(g, r);
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            PaintGlow(e.Graphics, new Rectangle(560, -160, 720, 460), Theme.Accent, 70);
+            PaintGlow(e.Graphics, new Rectangle(-180, 300, 560, 480), Color.FromArgb(150, 90, 220), 55);
+            PaintGlow(e.Graphics, new Rectangle(430, 430, 620, 420), Color.FromArgb(60, 190, 170), 45);
+            using (Pen p = new Pen(Color.FromArgb(90, 255, 255, 255), 1f))
+                e.Graphics.DrawPath(p, Util.Round(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 14));
+        }
+        void PaintGlow(Graphics g, Rectangle area, Color c, int alpha)
+        {
+            using (GraphicsPath gp = new GraphicsPath())
+            {
+                gp.AddEllipse(area);
+                using (PathGradientBrush b = new PathGradientBrush(gp))
+                {
+                    b.CenterColor = Color.FromArgb(alpha, c);
+                    b.SurroundColors = new Color[] { Color.FromArgb(0, c) };
+                    g.FillPath(b, gp);
+                }
+            }
         }
 
         // ComboBox 下拉列表深色化 (Flat 模式下弹出列表仍是系统白底)
@@ -2325,7 +2364,7 @@ namespace MouseLauncher
             titleBar = new Panel();
             titleBar.Dock = DockStyle.Top;
             titleBar.Height = 46;
-            titleBar.BackColor = Theme.Sidebar;
+            titleBar.BackColor = Color.FromArgb(215, 26, 26, 36);
             titleBar.MouseMove += TitleMove;
             titleBar.MouseDoubleClick += delegate { ToggleMax(); };
             titleBar.Paint += delegate(object s, PaintEventArgs e)
@@ -2393,7 +2432,7 @@ namespace MouseLauncher
             sidebar = new Panel();
             sidebar.Dock = DockStyle.Left;
             sidebar.Width = 168;
-            sidebar.BackColor = Theme.Sidebar;
+            sidebar.BackColor = Color.FromArgb(205, 26, 26, 36);
             Controls.Add(sidebar);
 
             if (LogoImg != null)
@@ -2471,25 +2510,25 @@ namespace MouseLauncher
         // ----- 启动页 -----
         Panel launchPage;
         List<Panel> pageCards = new List<Panel>();
-        void Card(Panel parent, string title, int x, int y, int w, int h)
+        Panel Card(Panel parent, string title, int x, int y, int w, int h)
         {
             Panel card = new Panel();
             card.SetBounds(x, y, w, h);
-            card.BackColor = Theme.Card;
+            card.BackColor = Color.FromArgb(165, 40, 40, 54); // 玻璃: 极光背景透出
             card.Paint += delegate(object s, PaintEventArgs e)
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 using (GraphicsPath p = Util.Round(new RectangleF(0.5f, 0.5f, card.Width - 1, card.Height - 1), 12))
                 {
-                    using (SolidBrush b = new SolidBrush(Color.FromArgb(8, 255, 255, 255))) e.Graphics.FillPath(b, p);
-                    using (Pen pen = new Pen(Color.FromArgb(66, 66, 80))) e.Graphics.DrawPath(pen, p);
+                    using (Pen pen = new Pen(Color.FromArgb(90, 255, 255, 255))) e.Graphics.DrawPath(pen, p);
                 }
-                using (SolidBrush dot = new SolidBrush(Theme.Accent)) e.Graphics.FillEllipse(dot, 18, 16, 7, 7);
+                using (SolidBrush dot = new SolidBrush(Theme.Accent)) e.Graphics.FillEllipse(dot, 18, 15, 7, 7);
                 TextRenderer.DrawText(e.Graphics, title, new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
                     new Rectangle(34, 8, 320, 24), Theme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
             };
             parent.Controls.Add(card);
             pageCards.Add(card);
+            return card;
         }
 
         // 页面控件全部加入后调用: Controls.Add 追加到 z-order 底层,
@@ -2507,35 +2546,34 @@ namespace MouseLauncher
             launchPage.BackColor = Theme.Bg;
             pageHost.Controls.Add(launchPage);
 
-            // 玩家卡
-            Card(launchPage, "玩家", 20, 14, 420, 96);
+            // 玩家卡 (内容挂进卡片, 玻璃透明链才正确)
+            Panel cardP = Card(launchPage, "玩家", 20, 14, 420, 96);
             if (LogoImg != null)
             {
                 PictureBox avatar = new PictureBox();
                 avatar.Image = LogoImg;
-                avatar.SetBounds(34, 40, 52, 52);
+                avatar.SetBounds(14, 26, 52, 52);
                 avatar.SizeMode = PictureBoxSizeMode.Zoom;
                 avatar.BackColor = Color.Transparent;
-                launchPage.Controls.Add(avatar);
-                avatar.BringToFront();
+                cardP.Controls.Add(avatar);
             }
-            Label l1 = new Label(); l1.Text = "玩家名:"; l1.ForeColor = Theme.Text; l1.SetBounds(100, 46, 55, 22); l1.BackColor = Theme.Card;
-            nameBox = new TextBox(); nameBox.SetBounds(158, 43, 150, 26); nameBox.Text = Settings.PlayerName;
+            Label l1 = new Label(); l1.Text = "玩家名:"; l1.ForeColor = Theme.Text; l1.SetBounds(80, 32, 55, 22); l1.BackColor = Color.Transparent;
+            nameBox = new TextBox(); nameBox.SetBounds(138, 29, 150, 26); nameBox.Text = Settings.PlayerName;
             nameBox.ForeColor = Theme.Text; nameBox.BackColor = Theme.CardLight; nameBox.BorderStyle = BorderStyle.FixedSingle;
-            Label l2 = new Label(); l2.Text = "(离线登录)"; l2.ForeColor = Theme.TextDim; l2.SetBounds(316, 46, 80, 22); l2.BackColor = Theme.Card;
-            launchPage.Controls.Add(l1); launchPage.Controls.Add(nameBox); launchPage.Controls.Add(l2);
+            Label l2 = new Label(); l2.Text = "(离线登录)"; l2.ForeColor = Theme.TextDim; l2.SetBounds(296, 32, 80, 22); l2.BackColor = Color.Transparent;
+            cardP.Controls.Add(l1); cardP.Controls.Add(nameBox); cardP.Controls.Add(l2);
 
             // Java 卡
-            Card(launchPage, "Java 运行时", 454, 14, 462, 96);
+            Panel cardJ = Card(launchPage, "Java 运行时", 454, 14, 462, 96);
             javaBox = new ComboBox();
-            javaBox.SetBounds(470, 40, 340, 26);
+            javaBox.SetBounds(16, 26, 340, 26);
             javaBox.DropDownStyle = ComboBoxStyle.DropDownList;
             javaBox.FlatStyle = FlatStyle.Flat;
             javaBox.BackColor = Theme.CardLight; javaBox.ForeColor = Theme.Text;
             javaBrowseBtn = new RButton();
             javaBrowseBtn.Text = "浏览...";
             javaBrowseBtn.Fill = Color.FromArgb(70, 70, 84);
-            javaBrowseBtn.SetBounds(818, 39, 84, 30);
+            javaBrowseBtn.SetBounds(364, 25, 84, 30);
             javaBrowseBtn.Font = new Font("Microsoft YaHei UI", 9F);
             javaBrowseBtn.Click += delegate
             {
@@ -2546,20 +2584,20 @@ namespace MouseLauncher
                     if (javaBox.Items.Count > 0) javaBox.SelectedIndex = 0;
                 }
             };
-            launchPage.Controls.Add(javaBox); launchPage.Controls.Add(javaBrowseBtn);
+            cardJ.Controls.Add(javaBox); cardJ.Controls.Add(javaBrowseBtn);
 
             // 该版本对应的 Java 需求提示
             javaNeedLab = new Label();
-            javaNeedLab.ForeColor = Theme.TextDim; javaNeedLab.BackColor = Theme.Card;
-            javaNeedLab.SetBounds(742, 24, 158, 20);
+            javaNeedLab.ForeColor = Theme.Green; javaNeedLab.BackColor = Color.Transparent;
+            javaNeedLab.SetBounds(286, 10, 162, 20);
             javaNeedLab.TextAlign = ContentAlignment.MiddleRight;
             javaNeedLab.Font = new Font("Microsoft YaHei UI", 8.5F);
-            launchPage.Controls.Add(javaNeedLab);
+            cardJ.Controls.Add(javaNeedLab);
 
             // 版本卡
-            Card(launchPage, "游戏版本 (与 PCL 共用)", 20, 122, 620, 96);
+            Panel cardV = Card(launchPage, "游戏版本 (与 PCL 共用)", 20, 122, 620, 96);
             versionBox = new ComboBox();
-            versionBox.SetBounds(36, 148, 260, 26);
+            versionBox.SetBounds(16, 26, 260, 26);
             versionBox.DropDownStyle = ComboBoxStyle.DropDownList;
             versionBox.FlatStyle = FlatStyle.Flat;
             versionBox.BackColor = Theme.CardLight; versionBox.ForeColor = Theme.Text;
@@ -2568,28 +2606,28 @@ namespace MouseLauncher
             refreshBtn.Text = "↻ 刷新";
             refreshBtn.Fill = Color.FromArgb(70, 70, 84);
             refreshBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            refreshBtn.SetBounds(306, 147, 80, 30);
+            refreshBtn.SetBounds(286, 25, 80, 30);
             refreshBtn.Click += delegate { ScanVersions(); };
             deleteBtn = new RButton();
             deleteBtn.Text = "🗑 删除";
             deleteBtn.Fill = Color.FromArgb(150, 70, 70);
             deleteBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            deleteBtn.SetBounds(396, 147, 84, 30);
+            deleteBtn.SetBounds(376, 25, 84, 30);
             deleteBtn.Click += delegate { DeleteVersion(); };
             Label l3 = new Label(); l3.Text = "删除会移除该版本的文件夹(不影响存档)"; l3.ForeColor = Theme.TextDim;
-            l3.SetBounds(36, 184, 400, 18); l3.BackColor = Theme.Card; l3.Font = new Font("Microsoft YaHei UI", 8F);
-            launchPage.Controls.Add(versionBox); launchPage.Controls.Add(refreshBtn); launchPage.Controls.Add(deleteBtn); launchPage.Controls.Add(l3);
+            l3.SetBounds(16, 62, 400, 18); l3.BackColor = Color.Transparent; l3.Font = new Font("Microsoft YaHei UI", 8F);
+            cardV.Controls.Add(versionBox); cardV.Controls.Add(refreshBtn); cardV.Controls.Add(deleteBtn); cardV.Controls.Add(l3);
 
             // 内存卡
-            Card(launchPage, "内存", 654, 122, 262, 96);
+            Panel cardM = Card(launchPage, "内存", 654, 122, 262, 96);
             memLabel = new Label();
             memLabel.Text = Settings.MemoryMB + " MB";
             memLabel.ForeColor = Theme.Text;
             memLabel.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
-            memLabel.SetBounds(866, 162, 70, 24);
-            memLabel.BackColor = Theme.Card;
+            memLabel.SetBounds(212, 40, 70, 24);
+            memLabel.BackColor = Color.Transparent;
             memTrack = new MouseSlider();
-            memTrack.SetBounds(662, 150, 198, 44);
+            memTrack.SetBounds(8, 28, 198, 44);
             memTrack.Minimum = 512; memTrack.Maximum = 8192;
             memTrack.OnValueChanged = delegate(int v)
             {
@@ -2597,7 +2635,7 @@ namespace MouseLauncher
                 Settings.MemoryMB = v;
             };
             memTrack.Value = Math.Max(512, Math.Min(8192, Settings.MemoryMB));
-            launchPage.Controls.Add(memTrack); launchPage.Controls.Add(memLabel);
+            cardM.Controls.Add(memTrack); cardM.Controls.Add(memLabel);
 
             // 启动按钮
             launchBtn = new RButton();
@@ -2613,10 +2651,11 @@ namespace MouseLauncher
             logTitle.Text = "运行日志";
             logTitle.ForeColor = Theme.TextDim;
             logTitle.SetBounds(22, 292, 120, 20);
+            logTitle.BackColor = Color.Transparent;
             gameStatLab = new Label();
             gameStatLab.Text = "○ 未在运行";
             gameStatLab.ForeColor = Theme.TextDim;
-            gameStatLab.BackColor = Theme.Bg;
+            gameStatLab.BackColor = Color.Transparent;
             gameStatLab.SetBounds(676, 292, 240, 20);
             gameStatLab.TextAlign = ContentAlignment.MiddleRight;
             launchPage.Controls.Add(gameStatLab);
@@ -2665,7 +2704,7 @@ namespace MouseLauncher
             manifestBtn.Click += delegate { LoadManifest(true); };
 
             Label fLab = new Label(); fLab.Text = "Fabric:"; fLab.ForeColor = Theme.TextDim;
-            fLab.BackColor = Theme.Bg; fLab.SetBounds(524, 23, 46, 20);
+            fLab.BackColor = Color.Transparent; fLab.SetBounds(524, 23, 46, 20);
             fabricBox = new ComboBox();
             fabricBox.SetBounds(572, 18, 110, 28);
             fabricBox.DropDownStyle = ComboBoxStyle.DropDownList;
@@ -2682,7 +2721,7 @@ namespace MouseLauncher
             Label tip = new Label();
             tip.Text = "Fabric 装到列表选中的版本上";
             tip.ForeColor = Theme.TextDim;
-            tip.BackColor = Theme.Bg;
+            tip.BackColor = Color.Transparent;
             tip.SetBounds(800, 23, 116, 20);
 
             verList = new ListView();
@@ -2974,7 +3013,7 @@ namespace MouseLauncher
             modStatusLab.Text = "来自 Modrinth · 搜索后选择工程, 再选择文件版本";
             modStatusLab.ForeColor = Theme.TextDim;
             modStatusLab.SetBounds(20, 474, 560, 20);
-            modStatusLab.BackColor = Theme.Bg;
+            modStatusLab.BackColor = Color.Transparent;
 
             modInstallBtn = new RButton();
             modInstallBtn.Text = "⬇  安装";
@@ -3174,57 +3213,57 @@ namespace MouseLauncher
             mpPage.Visible = false;
             pageHost.Controls.Add(mpPage);
 
-            Card(mpPage, "创建房间 (你是房主)", 20, 14, 440, 300);
+            Panel cardH = Card(mpPage, "创建房间 (你是房主)", 20, 14, 440, 300);
             Label h1 = new Label(); h1.Text = "1. 进入单人世界按 Esc → 「对局域网开放」\n2. 游戏端口会自动识别 (也可手动填)\n3. 点创建, 把邀请码发给朋友";
-            h1.ForeColor = Theme.TextDim; h1.BackColor = Theme.Card; h1.SetBounds(36, 40, 400, 54);
-            Label h2 = new Label(); h2.Text = "游戏端口:"; h2.ForeColor = Theme.Text; h2.BackColor = Theme.Card; h2.SetBounds(36, 104, 66, 22);
-            mpPortBox = new TextBox(); mpPortBox.SetBounds(106, 101, 90, 24); mpPortBox.Text = "25565";
+            h1.ForeColor = Theme.TextDim; h1.BackColor = Color.Transparent; h1.SetBounds(16, 26, 400, 54);
+            Label h2 = new Label(); h2.Text = "游戏端口:"; h2.ForeColor = Theme.Text; h2.BackColor = Color.Transparent; h2.SetBounds(16, 90, 66, 22);
+            mpPortBox = new TextBox(); mpPortBox.SetBounds(86, 87, 90, 24); mpPortBox.Text = "25565";
             mpPortBox.ForeColor = Theme.Text; mpPortBox.BackColor = Theme.CardLight; mpPortBox.BorderStyle = BorderStyle.FixedSingle;
-            Label h3 = new Label(); h3.Text = "(开「对局域网开放」后自动填入)"; h3.ForeColor = Theme.TextDim; h3.BackColor = Theme.Card; h3.SetBounds(204, 104, 240, 22);
+            Label h3 = new Label(); h3.Text = "(开「对局域网开放」后自动填入)"; h3.ForeColor = Theme.TextDim; h3.BackColor = Color.Transparent; h3.SetBounds(184, 90, 240, 22);
             mpHostBtn = new RButton(); mpHostBtn.Text = "🌐 创建房间"; mpHostBtn.Fill = Theme.Green;
             mpHostBtn.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
-            mpHostBtn.SetBounds(36, 138, 130, 34);
+            mpHostBtn.SetBounds(16, 124, 130, 34);
             mpHostBtn.Click += delegate { ToggleHost(); };
             mpCodeOut = new TextBox(); mpCodeOut.Multiline = true; mpCodeOut.ReadOnly = true;
-            mpCodeOut.SetBounds(36, 182, 408, 56); mpCodeOut.Font = new Font("Consolas", 8.5F);
+            mpCodeOut.SetBounds(16, 168, 408, 56); mpCodeOut.Font = new Font("Consolas", 8.5F);
             mpCodeOut.ForeColor = Theme.Text; mpCodeOut.BackColor = Theme.CardLight; mpCodeOut.BorderStyle = BorderStyle.FixedSingle;
             mpCodeOut.Text = "(邀请码生成后显示在这里)";
             mpCopyBtn = new RButton(); mpCopyBtn.Text = "📋 复制邀请码"; mpCopyBtn.Fill = Color.FromArgb(70, 70, 84);
             mpCopyBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            mpCopyBtn.SetBounds(176, 138, 116, 34);
+            mpCopyBtn.SetBounds(156, 124, 116, 34);
             mpCopyBtn.Click += delegate
             {
                 if (mpHost == null || string.IsNullOrEmpty(mpHost.InviteCode)) return;
                 try { Clipboard.SetText(mpHost.InviteCode); mpHostStat.Text = "邀请码已复制到剪贴板 ✓"; } catch { }
             };
             mpHostStat = new Label(); mpHostStat.Text = "未创建"; mpHostStat.ForeColor = Theme.TextDim;
-            mpHostStat.BackColor = Theme.Card; mpHostStat.SetBounds(36, 244, 408, 60);
+            mpHostStat.BackColor = Color.Transparent; mpHostStat.SetBounds(16, 230, 408, 60);
 
-            Card(mpPage, "加入房间 (你是客人)", 480, 14, 434, 300);
+            Panel cardJ2 = Card(mpPage, "加入房间 (你是客人)", 480, 14, 434, 300);
             Label j1 = new Label(); j1.Text = "把房主发来的邀请码粘到这里, 加入后照常进游戏:";
-            j1.ForeColor = Theme.TextDim; j1.BackColor = Theme.Card; j1.SetBounds(496, 40, 400, 20);
-            mpCodeIn = new TextBox(); mpCodeIn.Multiline = true; mpCodeIn.SetBounds(496, 66, 400, 84);
+            j1.ForeColor = Theme.TextDim; j1.BackColor = Color.Transparent; j1.SetBounds(16, 26, 400, 20);
+            mpCodeIn = new TextBox(); mpCodeIn.Multiline = true; mpCodeIn.SetBounds(16, 52, 400, 84);
             mpCodeIn.Font = new Font("Consolas", 8.5F);
             mpCodeIn.ForeColor = Theme.Text; mpCodeIn.BackColor = Theme.CardLight; mpCodeIn.BorderStyle = BorderStyle.FixedSingle;
             mpJoinBtn = new RButton(); mpJoinBtn.Text = "🚪 加入房间"; mpJoinBtn.Fill = Theme.Accent;
             mpJoinBtn.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
-            mpJoinBtn.SetBounds(496, 158, 130, 34);
+            mpJoinBtn.SetBounds(16, 144, 130, 34);
             mpJoinBtn.Click += delegate { ToggleJoin(); };
             mpJoinStat = new Label(); mpJoinStat.Text = ""; mpJoinStat.ForeColor = Theme.TextDim;
-            mpJoinStat.BackColor = Theme.Card; mpJoinStat.SetBounds(496, 202, 400, 100);
+            mpJoinStat.BackColor = Color.Transparent; mpJoinStat.SetBounds(16, 188, 400, 100);
 
-            Card(mpPage, "说明", 20, 330, 894, 150);
+            Panel cardN = Card(mpPage, "说明", 20, 330, 894, 150);
             Label note = new Label();
             note.Text = "· P2P 打洞直连: 不经任何服务器, 延迟取决于双方网络; 无需注册账号。\n" +
                 "· 双方都用老鼠启动器: 房主「创建房间」, 朋友粘贴邀请码「加入房间」, 然后在 MC 多人游戏里直接连接提示的地址。\n" +
                 "· 若长时间打洞失败: 多为运营商 NAT 限制, 换房主/换网络重建房间再试; Windows 防火弹窗请点允许。\n" +
                 "· 同一个房间邀请码可发给多人, 房主端会显示已连入人数。";
-            note.ForeColor = Theme.TextDim; note.BackColor = Theme.Card; note.SetBounds(36, 346, 860, 120);
+            note.ForeColor = Theme.TextDim; note.BackColor = Color.Transparent; note.SetBounds(16, 16, 860, 120);
 
-            mpPage.Controls.Add(h1); mpPage.Controls.Add(h2); mpPage.Controls.Add(mpPortBox); mpPage.Controls.Add(h3);
-            mpPage.Controls.Add(mpHostBtn); mpPage.Controls.Add(mpCodeOut); mpPage.Controls.Add(mpCopyBtn); mpPage.Controls.Add(mpHostStat);
-            mpPage.Controls.Add(j1); mpPage.Controls.Add(mpCodeIn); mpPage.Controls.Add(mpJoinBtn); mpPage.Controls.Add(mpJoinStat);
-            mpPage.Controls.Add(note);
+            cardH.Controls.Add(h1); cardH.Controls.Add(h2); cardH.Controls.Add(mpPortBox); cardH.Controls.Add(h3);
+            cardH.Controls.Add(mpHostBtn); cardH.Controls.Add(mpCodeOut); cardH.Controls.Add(mpCopyBtn); cardH.Controls.Add(mpHostStat);
+            cardJ2.Controls.Add(j1); cardJ2.Controls.Add(mpCodeIn); cardJ2.Controls.Add(mpJoinBtn); cardJ2.Controls.Add(mpJoinStat);
+            cardN.Controls.Add(note);
             SinkCards();
         }
 
@@ -3350,9 +3389,9 @@ namespace MouseLauncher
             settingsPage.Visible = false;
             pageHost.Controls.Add(settingsPage);
 
-            Card(settingsPage, "游戏目录 (.minecraft)", 20, 14, 896, 130);
+            Panel cardDir = Card(settingsPage, "游戏目录 (.minecraft)", 20, 14, 896, 130);
             dirBox = new TextBox();
-            dirBox.SetBounds(36, 44, 660, 26);
+            dirBox.SetBounds(16, 30, 660, 26);
             dirBox.Text = Settings.McDir;
             dirBox.ReadOnly = true;
             dirBox.BackColor = Theme.CardLight; dirBox.ForeColor = Theme.Text; dirBox.BorderStyle = BorderStyle.FixedSingle;
@@ -3360,7 +3399,7 @@ namespace MouseLauncher
             dirBrowseBtn.Text = "更改...";
             dirBrowseBtn.Fill = Color.FromArgb(70, 70, 84);
             dirBrowseBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            dirBrowseBtn.SetBounds(706, 43, 90, 30);
+            dirBrowseBtn.SetBounds(686, 29, 90, 30);
             dirBrowseBtn.Click += delegate
             {
                 using (FolderBrowserDialog d = new FolderBrowserDialog())
@@ -3378,7 +3417,7 @@ namespace MouseLauncher
             openDirBtn.Text = "打开文件夹";
             openDirBtn.Fill = Color.FromArgb(70, 70, 84);
             openDirBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            openDirBtn.SetBounds(806, 43, 96, 30);
+            openDirBtn.SetBounds(786, 29, 96, 30);
             openDirBtn.Click += delegate { try { Process.Start(Settings.McDir); } catch { } };
             // 快捷打开子目录
             string[][] quickDirs = new string[][] {
@@ -3391,7 +3430,7 @@ namespace MouseLauncher
                 qb.Text = quickDirs[i][0];
                 qb.Fill = Color.FromArgb(70, 70, 84);
                 qb.Font = new Font("Microsoft YaHei UI", 8.5F);
-                qb.SetBounds(36 + i * 96, 82, 88, 26);
+                qb.SetBounds(16 + i * 96, 68, 88, 26);
                 qb.Click += delegate
                 {
                     string d = Path.Combine(Settings.McDir, sub);
@@ -3399,27 +3438,28 @@ namespace MouseLauncher
                     if (Directory.Exists(d)) { try { Process.Start(d); } catch { } }
                     else MessageBox.Show(this, "目录还不存在: " + sub + "\n(玩过游戏/装过mod后自动生成)", "老鼠启动器");
                 };
-                settingsPage.Controls.Add(qb);
+                cardDir.Controls.Add(qb);
             }
             CheckBox backupChk = new CheckBox();
             backupChk.Text = "启动游戏前自动备份存档 (保留最近 5 份, 存到 backups\\)";
             backupChk.ForeColor = Theme.Text;
-            backupChk.BackColor = Theme.Card;
+            backupChk.BackColor = Color.Transparent;
             backupChk.AutoSize = false;
-            backupChk.SetBounds(524, 82, 380, 26);
+            backupChk.SetBounds(504, 68, 380, 26);
             backupChk.Checked = Settings.AutoBackup;
             backupChk.CheckedChanged += delegate { Settings.AutoBackup = backupChk.Checked; Settings.Save(); };
-            settingsPage.Controls.Add(dirBox); settingsPage.Controls.Add(dirBrowseBtn); settingsPage.Controls.Add(openDirBtn);
-            settingsPage.Controls.Add(backupChk);
+            cardDir.Controls.Add(dirBox); cardDir.Controls.Add(dirBrowseBtn); cardDir.Controls.Add(openDirBtn);
+            cardDir.Controls.Add(backupChk);
 
-            Card(settingsPage, "关于", 20, 156, 896, 120);
+            Panel cardAbout = Card(settingsPage, "关于", 20, 156, 896, 120);
             if (LogoImg != null)
             {
                 PictureBox aboutLogo = new PictureBox();
                 aboutLogo.Image = LogoImg;
-                aboutLogo.SetBounds(36, 186, 44, 44);
+                aboutLogo.SetBounds(16, 30, 44, 44);
                 aboutLogo.SizeMode = PictureBoxSizeMode.Zoom;
-                settingsPage.Controls.Add(aboutLogo);
+                aboutLogo.BackColor = Color.Transparent;
+                cardAbout.Controls.Add(aboutLogo);
             }
             Label about = new Label();
             about.Text = "老鼠启动器 v1.1  by osaka\n" +
@@ -3427,9 +3467,9 @@ namespace MouseLauncher
                 "与 PCL2 共用同一个 .minecraft 目录, 双方互相可见对方安装的版本。\n" +
                 "数据源: Mojang 官方 (launchermeta / resources.download), 失败自动切换 BMCLAPI 镜像。";
             about.ForeColor = Theme.TextDim;
-            about.BackColor = Theme.Card;
-            about.SetBounds(96, 188, 800, 80);
-            settingsPage.Controls.Add(about);
+            about.BackColor = Color.Transparent;
+            about.SetBounds(76, 32, 800, 80);
+            cardAbout.Controls.Add(about);
             SinkCards();
         }
 
