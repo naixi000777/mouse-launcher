@@ -1328,7 +1328,7 @@ namespace MouseLauncher
             JToken client = vj["downloads"]["client"];
             SetStatus("下载 client.jar ...");
             SetProgress(2);
-            Fetch((string)client["url"], Path.Combine(vDir, versionId + ".jar"), (long)client["size"]);
+            Fetch((string)client["url"], Path.Combine(vDir, versionId + ".jar"), (long)client["size"], true);
             Util.Log(LogBox, "client.jar 完成 (" + ((long)client["size"] / 1024 / 1024) + " MB)");
             return vj;
         }
@@ -1349,7 +1349,7 @@ namespace MouseLauncher
                     JToken c = lib["downloads"]["classifiers"][cls];
                     if (c != null) dl = c;
                 }
-                if (dl != null) libItems.Add(new string[] { (string)dl["url"], (string)dl["path"] });
+                if (dl != null) libItems.Add(new string[] { (string)dl["url"], "libraries/" + (string)dl["path"] });
                 else if (lib["name"] != null && lib["url"] != null)
                 {
                     // 老式 maven 库 (Fabric): "组:名:版本" -> 仓库/组/名/版本/名-版本.jar
@@ -1357,18 +1357,103 @@ namespace MouseLauncher
                     if (np.Length >= 3)
                     {
                         string rel = np[0].Replace('.', '/') + "/" + np[1] + "/" + np[2] + "/" + np[1] + "-" + np[2] + ".jar";
-                        libItems.Add(new string[] { ((string)lib["url"]).TrimEnd('/') + "/" + rel, rel });
+                        libItems.Add(new string[] { ((string)lib["url"]).TrimEnd('/') + "/" + rel, "libraries/" + rel });
                     }
                 }
             }
-            int done = 0;
-            foreach (string[] it in libItems)
-            {
-                Fetch(it[0], Path.Combine(McDir, "libraries", it[1].Replace('/', '\\')), 0);
-                done++;
-                SetProgress(2 + 20 * done / Math.Max(1, libItems.Count));
-            }
+            ParallelFetch(libItems, 2, 20, "支持库");
             Util.Log(LogBox, "支持库完成 (" + libItems.Count + " 项)");
+        }
+
+        // 并行批量下载: 8 路 + 镜像优先 + .part 原子落盘 + 限频进度/ETA; 失败收集后官方源串行重试
+        void ParallelFetch(List<string[]> items, int progressBase, int progressSpan, string label)
+        {
+            if (items.Count == 0) return;
+            List<string[]> failed = new List<string[]>();
+            object locker = new object();
+            int done = 0, pending = items.Count;
+            ManualResetEvent fin = new ManualResetEvent(false);
+            Stopwatch sw = Stopwatch.StartNew();
+            Thread reporter = new Thread(delegate()
+            {
+                while (true)
+                {
+                    lock (locker)
+                    {
+                        if (pending == 0) break;
+                        int d = done;
+                        double rate = d / Math.Max(0.5, sw.Elapsed.TotalSeconds);
+                        // 前 8 个完成前样本太少, ETA 会虚高, 只显示计数
+                        bool etaOk = d >= 8 && rate > 0.05;
+                        int eta = etaOk ? (int)((items.Count - d) / rate) : -1;
+                        SetProgress(progressBase + progressSpan * d / items.Count);
+                        SetStatus(label + " " + d + " / " + items.Count + (eta > 3 ? "  剩约 " + eta + " 秒" : "  即将完成"));
+                    }
+                    Thread.Sleep(400);
+                }
+            });
+            reporter.IsBackground = true; reporter.Start();
+            foreach (string[] it in items)
+            {
+                string url = it[0], rel = it[1];
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    try
+                    {
+                        string dest = Path.Combine(McDir, rel.Replace('/', '\\'));
+                        string dir = Path.GetDirectoryName(dest);
+                        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                        string part = dest + ".part";
+                        Web.DownloadFileMirrorFirst(url, part);
+                        if (File.Exists(dest)) File.Delete(dest);
+                        File.Move(part, dest);
+                    }
+                    catch { lock (locker) failed.Add(new string[] { url, rel }); }
+                    lock (locker)
+                    {
+                        done++; pending--;
+                        if (pending == 0) fin.Set();
+                    }
+                });
+            }
+            fin.WaitOne();
+            reporter.Join(1500);
+            // 落盘校验: 主循环"成功"但文件缺失的, 记录真实异常再补下 (曾出现 authlib 静默丢失)
+            List<string[]> broken = new List<string[]>();
+            foreach (string[] it in items)
+            {
+                string dest = Path.Combine(McDir, it[1].Replace('/', '\\'));
+                if (!File.Exists(dest) && !failed.Any(f => f[1] == it[1])) broken.Add(it);
+            }
+            if (broken.Count > 0)
+                Util.Log(LogBox, label + " 校验发现 " + broken.Count + " 个未落盘, 逐个补下...");
+            foreach (string[] it in broken)
+            {
+                string dest = Path.Combine(McDir, it[1].Replace('/', '\\'));
+                string dir = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                string part = dest + ".part";
+                try
+                {
+                    Web.DownloadFile(it[0], part);
+                    if (File.Exists(dest)) File.Delete(dest);
+                    File.Move(part, dest);
+                    Util.Log(LogBox, label + " 补下成功: " + it[1]);
+                }
+                catch (Exception ex) { Util.Log(LogBox, label + " 补下失败 " + it[1] + ": " + ex.Message); }
+            }
+            foreach (string[] it in failed)
+            {
+                string dest = Path.Combine(McDir, it[1].Replace('/', '\\'));
+                string dir = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                string part = dest + ".part";
+                Web.DownloadFile(it[0], part); // 重试走官方源
+                if (File.Exists(dest)) File.Delete(dest);
+                File.Move(part, dest);
+            }
+            if (failed.Count > 0) Util.Log(LogBox, label + "重试成功 " + failed.Count + " 个 (官方源)");
+            SetProgress(progressBase + progressSpan);
         }
 
         public void EnsureAssets(JObject vj)
@@ -1380,26 +1465,29 @@ namespace MouseLauncher
             Fetch((string)ai["url"], indexPath, -1);
             JObject index = JObject.Parse(File.ReadAllText(indexPath, Encoding.UTF8));
             JObject objects = (JObject)index["objects"];
-            int total = objects.Count, newCount = 0; long newBytes = 0; int i = 0;
+            int total = objects.Count;
+            // 先本地清点, 只下载缺失的
+            List<string[]> need = new List<string[]>();
             foreach (JProperty p in objects.Properties())
             {
                 string hash = (string)p.Value["hash"];
                 long size = (long)p.Value["size"];
                 string dest = Path.Combine(McDir, "assets", "objects", hash.Substring(0, 2), hash);
-                if (Fetch("https://resources.download.minecraft.net/" + hash.Substring(0, 2) + "/" + hash, dest, size)) { newCount++; newBytes += size; }
-                i++;
-                if (i % 100 == 0)
-                {
-                    SetProgress(22 + 76 * i / total);
-                    SetStatus("资源文件 " + i + " / " + total);
-                }
+                if (!(File.Exists(dest) && new FileInfo(dest).Length == size))
+                    need.Add(new string[] { "https://resources.download.minecraft.net/" + hash.Substring(0, 2) + "/" + hash, "assets/objects/" + hash.Substring(0, 2) + "/" + hash });
+            }
+            Util.Log(LogBox, "资源文件: 共 " + total + ", 需下载 " + need.Count);
+            if (need.Count > 0)
+            {
+                ParallelFetch(need, 22, 76, "资源文件");
             }
             SetProgress(100);
             SetStatus("完成");
-            Util.Log(LogBox, "资源文件完成: 共 " + total + ", 新下载 " + newCount + " (" + (newBytes / 1024 / 1024) + " MB)");
+            Util.Log(LogBox, "资源文件完成: 共 " + total + ", 新下载 " + need.Count);
         }
 
-        bool Fetch(string url, string dest, long expectedSize)
+        bool Fetch(string url, string dest, long expectedSize) { return Fetch(url, dest, expectedSize, false); }
+        bool Fetch(string url, string dest, long expectedSize, bool mirrorFirst)
         {
             try
             {
@@ -1411,7 +1499,8 @@ namespace MouseLauncher
                 string dir = Path.GetDirectoryName(dest);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
                 string tmp = dest + ".tmp";
-                try { Web.DownloadFile(url, tmp); } catch { Web.DownloadFile(url, tmp); }
+                if (mirrorFirst) Web.DownloadFileMirrorFirst(url, tmp);
+                else { try { Web.DownloadFile(url, tmp); } catch { Web.DownloadFile(url, tmp); } }
                 if (File.Exists(dest)) File.Delete(dest);
                 File.Move(tmp, dest);
                 return true;
@@ -2017,7 +2106,6 @@ namespace MouseLauncher
         JArray curResults;
         // 设置页
         TextBox dirBox;
-        NumericUpDown defMem;
         RButton dirBrowseBtn, openDirBtn;
 
         public MainForm()
@@ -2717,16 +2805,25 @@ namespace MouseLauncher
         {
             string old = targetVerBox.SelectedItem as string;
             targetVerBox.Items.Clear();
+            List<string> loaders = new List<string>(), plain = new List<string>();
             try
             {
-                foreach (string dir in Directory.GetDirectories(Path.Combine(Settings.McDir, "versions")).OrderBy(s => s))
+                foreach (string dir in Directory.GetDirectories(Path.Combine(Settings.McDir, "versions")))
                 {
                     string name = Path.GetFileName(dir);
-                    if (File.Exists(Path.Combine(dir, name + ".json"))) targetVerBox.Items.Add(name);
+                    string jp = Path.Combine(dir, name + ".json");
+                    if (!File.Exists(jp)) continue;
+                    // 加载器版本排在前面, mod 才有得装
+                    string js = File.ReadAllText(jp, Encoding.UTF8);
+                    bool isLoader = js.IndexOf("fabric", StringComparison.OrdinalIgnoreCase) >= 0 || js.IndexOf("forge", StringComparison.OrdinalIgnoreCase) >= 0 || js.IndexOf("neoforge", StringComparison.OrdinalIgnoreCase) >= 0;
+                    (isLoader ? loaders : plain).Add(name);
                 }
             }
             catch { }
+            foreach (string n in loaders) targetVerBox.Items.Add(n);
+            foreach (string n in plain) targetVerBox.Items.Add(n);
             if (old != null && targetVerBox.Items.Contains(old)) targetVerBox.SelectedItem = old;
+            else if (loaders.Count > 0) targetVerBox.SelectedIndex = 0;
             else if (targetVerBox.Items.Count > 0) targetVerBox.SelectedIndex = 0;
         }
 
