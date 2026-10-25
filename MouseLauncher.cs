@@ -327,7 +327,7 @@ namespace MouseLauncher
             }
             return Path.Combine(roaming, ".minecraft"); // 兜底: 下载时会自动创建
         }
-        public static string PlayerName = "naixi";
+        public static string PlayerName = "";   // 默认留空, 由用户自己填; 启动时留空则用 Player
         public static int MemoryMB = 2048;
         public static string WinPos = "";
         public static bool AutoBackup = true;
@@ -2510,6 +2510,7 @@ namespace MouseLauncher
     {
         [DllImport("user32.dll")] static extern bool ReleaseCapture();
         [DllImport("user32.dll")] static extern int SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageW(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
 
         Panel titleBar, sidebar, pageHost;
         NavItem navLaunch, navDownload, navMod, navSettings, navMp;
@@ -2885,6 +2886,11 @@ namespace MouseLauncher
             Label l1 = new Label(); l1.Text = "玩家名:"; l1.ForeColor = Theme.Text; l1.SetBounds(80, 32, 55, 22); l1.BackColor = Color.Transparent;
             nameBox = new TextBox(); nameBox.SetBounds(138, 29, 150, 26); nameBox.Text = Settings.PlayerName;
             nameBox.ForeColor = Theme.Text; nameBox.BackColor = Theme.CardLight; nameBox.BorderStyle = BorderStyle.FixedSingle;
+            // 空状态下显示灰字提示 (EM_SETCUEBANNER), 不写入实际文本
+            nameBox.HandleCreated += delegate
+            {
+                try { SendMessageW(nameBox.Handle, 0x1501, IntPtr.Zero, "留空则使用 Player"); } catch { }
+            };
             Label l2 = new Label(); l2.Text = "(离线登录)"; l2.ForeColor = Theme.TextDim; l2.SetBounds(296, 32, 80, 22); l2.BackColor = Color.Transparent;
             cardP.Controls.Add(l1); cardP.Controls.Add(nameBox); cardP.Controls.Add(l2);
 
