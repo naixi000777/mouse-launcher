@@ -384,6 +384,7 @@ namespace MouseLauncher
     // ---------- 通用 ----------
     static class Util
     {
+        static object logLock = new object();
         public static void Log(TextBox tb, string msg)
         {
             string line = "[" + DateTime.Now.ToString("HH:mm:ss") + "] " + msg;
@@ -392,12 +393,15 @@ namespace MouseLauncher
             {
                 try { tb.BeginInvoke((MethodInvoker)delegate { Append(tb, line); }); } catch { }
             }
-            else Append(tb, line);
+            else { try { Append(tb, line); } catch { } }
         }
         static void Append(TextBox tb, string line)
         {
-            if (tb.Text.Length > 80000) tb.Text = tb.Text.Substring(tb.Text.Length - 40000);
-            tb.AppendText(line + Environment.NewLine);
+            lock (logLock)
+            {
+                if (tb.Text.Length > 80000) tb.Text = tb.Text.Substring(tb.Text.Length - 40000);
+                tb.AppendText(line + Environment.NewLine);
+            }
         }
         public static string OfflineUuid(string name)
         {
@@ -1705,6 +1709,7 @@ namespace MouseLauncher
             vars["clientid"] = "0";
             vars["auth_xuid"] = "0";
             vars["user_type"] = "legacy";
+            vars["user_properties"] = "{}"; // 1.7.x minecraftArguments 必需
             vars["version_type"] = "release";
             vars["natives_directory"] = nativesDir;
             vars["launcher_name"] = "MouseLauncher";
@@ -4104,8 +4109,12 @@ namespace MouseLauncher
                     if (gp.ExitCode != 0)
                     {
                         Log("游戏异常退出 (代码 " + gp.ExitCode + ")");
-                        string why = Util.CrashReason(Settings.McDir);
-                        if (why != null) Log("可能原因: " + why);
+                        try
+                        {
+                            string why = Util.CrashReason(Settings.McDir);
+                            if (why != null) Log("可能原因: " + why);
+                        }
+                        catch { }
                     }
                     else Log("游戏已正常退出");
                 }
