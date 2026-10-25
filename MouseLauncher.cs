@@ -25,9 +25,14 @@ namespace MouseLauncher
 {
     static class Program
     {
+        // 强制 uxtheme 暗色模式 (Chrome 同款方案): 滚动条/勾选框/下拉边框恒定深色, 不随系统主题
+        [System.Runtime.InteropServices.DllImport("uxtheme.dll", EntryPoint = "#135")]
+        static extern int SetPreferredAppMode(int mode);
+
         [STAThread]
         static void Main(string[] args)
         {
+            try { SetPreferredAppMode(2); } catch { } // 2 = ForceDark
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 #if CLI
             if (args.Length < 1)
@@ -2237,6 +2242,118 @@ namespace MouseLauncher
         protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
     }
 
+    // ---------- UI: 全自绘下拉框 (边框/箭头/列表全部自绘, 不受系统主题影响) ----------
+    class DarkDropDown : Control
+    {
+        public List<string> Items = new List<string>();
+        int sel = -1;
+        public event EventHandler SelectedIndexChanged;
+
+        public DarkDropDown()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
+            Font = new Font("Microsoft YaHei UI", 9F);
+            Cursor = Cursors.Hand;
+        }
+
+        public void AddRange(System.Array items)
+        {
+            Items.Clear();
+            foreach (object o in items) Items.Add(o == null ? "" : o.ToString());
+            if (Items.Count > 0 && sel < 0) { sel = 0; Invalidate(); }
+        }
+
+        public int SelectedIndex
+        {
+            get { return sel; }
+            set { sel = value; Invalidate(); if (SelectedIndexChanged != null) SelectedIndexChanged(this, EventArgs.Empty); }
+        }
+
+        public string SelectedItem
+        {
+            get { return sel >= 0 && sel < Items.Count ? Items[sel] : null; }
+            set { SelectedIndex = Items.IndexOf(value); }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath p = Util.Round(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 6))
+            {
+                using (SolidBrush b = new SolidBrush(Theme.CardLight)) e.Graphics.FillPath(b, p);
+                using (Pen pen = new Pen(Color.FromArgb(100, 100, 112))) e.Graphics.DrawPath(pen, p);
+            }
+            string t = sel >= 0 && sel < Items.Count ? Items[sel] : "";
+            TextRenderer.DrawText(e.Graphics, t, Font, new Rectangle(8, 0, Width - 28, Height),
+                Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            // 自绘箭头
+            int ax = Width - 16, ay = Height / 2;
+            using (SolidBrush b = new SolidBrush(Color.FromArgb(170, 200, 205, 215)))
+                e.Graphics.FillPolygon(b, new Point[] { new Point(ax - 5, ay - 2), new Point(ax + 5, ay - 2), new Point(ax, ay + 4) });
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            ShowPopup();
+            base.OnClick(e);
+        }
+
+        Form popup;
+        int hoverIdx = -1;
+        void ShowPopup()
+        {
+            ClosePopup();
+            int rows = Math.Min(Items.Count, 10);
+            popup = new Form();
+            popup.FormBorderStyle = FormBorderStyle.None;
+            popup.ShowInTaskbar = false;
+            popup.StartPosition = FormStartPosition.Manual;
+            popup.BackColor = Color.FromArgb(42, 42, 54);
+            popup.Size = new Size(Width, rows * 24 + 10);
+            Point sp = PointToScreen(new Point(0, Height));
+            if (sp.Y + popup.Height > Screen.FromControl(this).WorkingArea.Bottom) sp.Y = PointToScreen(new Point(0, 0)).Y - popup.Height;
+            popup.Location = sp;
+            popup.Paint += delegate(object s, PaintEventArgs e)
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (Pen pen = new Pen(Color.FromArgb(100, 100, 112))) e.Graphics.DrawRectangle(pen, 0, 0, popup.Width - 1, popup.Height - 1);
+                for (int i = 0; i < rows && i < Items.Count; i++)
+                {
+                    Rectangle r = new Rectangle(2, 4 + i * 24, popup.Width - 4, 24);
+                    if (i == hoverIdx)
+                        using (SolidBrush b = new SolidBrush(Color.FromArgb(60, 74, 96))) e.Graphics.FillRectangle(b, r);
+                    TextRenderer.DrawText(e.Graphics, Items[i], Font, new Rectangle(r.X + 8, r.Y, r.Width - 10, r.Height),
+                        Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+                }
+            };
+            popup.MouseMove += delegate(object s, MouseEventArgs e)
+            {
+                int hi = (e.Y - 4) / 24;
+                if (hi >= 0 && hi < rows && hi < Items.Count && hi != hoverIdx) { hoverIdx = hi; popup.Invalidate(); }
+                else if ((hi < 0 || hi >= rows) && hoverIdx != -1) { hoverIdx = -1; popup.Invalidate(); }
+            };
+            popup.MouseClick += delegate(object s, MouseEventArgs e)
+            {
+                int i = (e.Y - 4) / 24;
+                if (e.Button == MouseButtons.Left && i >= 0 && i < rows && i < Items.Count)
+                {
+                    ClosePopup();
+                    SelectedIndex = i;
+                }
+            };
+            popup.Deactivate += delegate { ClosePopup(); };
+            popup.Show(this);
+        }
+
+        void ClosePopup()
+        {
+            if (popup != null) { try { popup.Close(); } catch { } popup = null; hoverIdx = -1; }
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e) { ClosePopup(); base.OnHandleDestroyed(e); }
+    }
+
     // ---------- UI: 标题栏按钮 (透明底, 悬停微亮/关闭悬停红) ----------
     class TitleButton : Control
     {
@@ -2399,7 +2516,7 @@ namespace MouseLauncher
         Label titleLabel;
         Image LogoImg;
         // 启动页
-        ComboBox versionBox, javaBox;
+        DarkDropDown versionBox, javaBox;
         TextBox nameBox, logBox;
         MouseSlider memTrack;
         Label memLabel, gameStatLab, javaNeedLab;
@@ -2408,19 +2525,19 @@ namespace MouseLauncher
         RButton launchBtn, refreshBtn, deleteBtn, javaBrowseBtn;
         // 下载页
         TextBox searchBox;
-        ComboBox filterBox;
+        DarkDropDown filterBox;
         ListView verList;
         RoundProgress bar;
         Label statusLab;
         RButton dlBtn, manifestBtn;
-        ComboBox fabricBox, forgeBox;
+        DarkDropDown fabricBox, forgeBox;
         RButton fabricBtn, forgeBtn;
         bool fabricFilled;
         JObject manifest;
         // Mod 页
         Panel modPage;
         TextBox modSearchBox;
-        ComboBox modTypeBox, targetVerBox;
+        DarkDropDown modTypeBox, targetVerBox;
         ListView modResultList, modVerList;
         RoundProgress modBar;
         Label modStatusLab;
@@ -2480,8 +2597,7 @@ namespace MouseLauncher
             BuildModPage();
             BuildSettingsPage();
             BuildMpPage();
-            DarkCombo(javaBox); DarkCombo(versionBox); DarkCombo(filterBox); DarkCombo(fabricBox);
-            DarkCombo(modTypeBox); DarkCombo(targetVerBox); DarkCombo(dirPresetBox); DarkCombo(forgeBox);
+            
             DarkList(verList); DarkList(modResultList); DarkList(modVerList);
             // 原生控件暗色主题: 滚动条/勾选框/下拉箭头按钮等变深色 (Win10 1809+)
             foreach (Control c in new Control[] { logBox, nameBox, dirBox, searchBox, modSearchBox, mpPortBox, mpCodeOut, mpCodeIn,
@@ -2545,23 +2661,6 @@ namespace MouseLauncher
                     g.FillPath(b, gp);
                 }
             }
-        }
-
-        // ComboBox 下拉深色化: 去掉系统白底先行绘制; 闭合态与列表项统一自绘; 箭头按钮由 DarkChrome 暗色主题处理
-        void DarkCombo(ComboBox cb)
-        {
-            cb.DrawMode = DrawMode.OwnerDrawFixed;
-            cb.ItemHeight = 20;
-            cb.DrawItem += delegate(object s, DrawItemEventArgs e)
-            {
-                bool sel = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
-                using (SolidBrush b = new SolidBrush(sel ? Color.FromArgb(60, 74, 96) : Theme.Card)) e.Graphics.FillRectangle(b, e.Bounds);
-                ComboBox box = (ComboBox)s;
-                string t = e.Index >= 0 && box.Items.Count > e.Index ? (box.Items[e.Index] as string ?? "") : "";
-                TextRenderer.DrawText(e.Graphics, t, new Font("Microsoft YaHei UI", 9F),
-                    new Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height),
-                    Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
-            };
         }
 
         // ListView 表头深色化 (行内容仍走系统默认绘制)
@@ -2762,6 +2861,7 @@ namespace MouseLauncher
             Panel card = new Panel();
             card.SetBounds(x, y, w, h);
             card.BackColor = Color.FromArgb(190, 40, 40, 54); // 玻璃: 微透极光, 卡面色差最小化
+            card.Region = new Region(Util.Round(new RectangleF(0, 0, w, h), 12)); // 裁成真圆角, 四角不露矩形底色
             card.Paint += delegate(object s, PaintEventArgs e)
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
@@ -2812,10 +2912,8 @@ namespace MouseLauncher
 
             // Java 卡
             Panel cardJ = Card(launchPage, "Java 运行时", 454, 14, 462, 96);
-            javaBox = new ComboBox();
+            javaBox = new DarkDropDown();
             javaBox.SetBounds(16, 38, 340, 26);
-            javaBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            javaBox.FlatStyle = FlatStyle.Flat;
             javaBox.BackColor = Theme.CardLight; javaBox.ForeColor = Theme.Text;
             javaBrowseBtn = new RButton();
             javaBrowseBtn.Text = "浏览...";
@@ -2843,10 +2941,8 @@ namespace MouseLauncher
 
             // 版本卡
             Panel cardV = Card(launchPage, "游戏版本 (与 PCL 共用)", 20, 122, 620, 96);
-            versionBox = new ComboBox();
+            versionBox = new DarkDropDown();
             versionBox.SetBounds(16, 26, 260, 26);
-            versionBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            versionBox.FlatStyle = FlatStyle.Flat;
             versionBox.BackColor = Theme.CardLight; versionBox.ForeColor = Theme.Text;
             versionBox.SelectedIndexChanged += delegate { UpdateJavaHint(); };
             refreshBtn = new RButton();
@@ -2946,12 +3042,10 @@ namespace MouseLauncher
             searchBox.TextChanged += delegate { ph.Visible = string.IsNullOrEmpty(searchBox.Text); FillVerList(); };
             searchBox.GotFocus += delegate { ph.Visible = string.IsNullOrEmpty(searchBox.Text); };
 
-            filterBox = new ComboBox();
+            filterBox = new DarkDropDown();
             filterBox.SetBounds(234, 38, 110, 28);
-            filterBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            filterBox.FlatStyle = FlatStyle.Flat;
             filterBox.BackColor = Theme.Card; filterBox.ForeColor = Theme.Text;
-            filterBox.Items.AddRange(new object[] { "仅正式版", "正式版+快照", "全部" });
+            filterBox.AddRange(new object[] { "仅正式版", "正式版+快照", "全部" });
             filterBox.SelectedIndex = 0;
             filterBox.SelectedIndexChanged += delegate { FillVerList(); };
 
@@ -2964,10 +3058,8 @@ namespace MouseLauncher
 
             Label fLab = new Label(); fLab.Text = "Fabric:"; fLab.ForeColor = Theme.TextDim;
             fLab.BackColor = Color.Transparent; fLab.SetBounds(430, 43, 44, 20);
-            fabricBox = new ComboBox();
+            fabricBox = new DarkDropDown();
             fabricBox.SetBounds(476, 38, 92, 28);
-            fabricBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            fabricBox.FlatStyle = FlatStyle.Flat;
             fabricBox.BackColor = Theme.Card; fabricBox.ForeColor = Theme.Text;
             fabricBox.Items.Add("最新");
             fabricBox.SelectedIndex = 0;
@@ -2979,10 +3071,8 @@ namespace MouseLauncher
             fabricBtn.Click += delegate { InstallFabricClick(); };
             Label forgeLab = new Label(); forgeLab.Text = "Forge:"; forgeLab.ForeColor = Theme.TextDim;
             forgeLab.BackColor = Color.Transparent; forgeLab.SetBounds(638, 43, 40, 20);
-            forgeBox = new ComboBox();
+            forgeBox = new DarkDropDown();
             forgeBox.SetBounds(680, 38, 96, 28);
-            forgeBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            forgeBox.FlatStyle = FlatStyle.Flat;
             forgeBox.BackColor = Theme.Card; forgeBox.ForeColor = Theme.Text;
             forgeBox.Items.Add("最新");
             forgeBox.SelectedIndex = 0;
@@ -3311,12 +3401,10 @@ namespace MouseLauncher
 
             Panel cardM = Card(modPage, "Mod / 整合包 / 资源包 / 光影", 20, 14, 894, 548);
 
-            modTypeBox = new ComboBox();
+            modTypeBox = new DarkDropDown();
             modTypeBox.SetBounds(16, 38, 110, 28);
-            modTypeBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            modTypeBox.FlatStyle = FlatStyle.Flat;
             modTypeBox.BackColor = Theme.Card; modTypeBox.ForeColor = Theme.Text;
-            modTypeBox.Items.AddRange(new object[] { "Mod", "整合包", "资源包", "光影" });
+            modTypeBox.AddRange(new object[] { "Mod", "整合包", "资源包", "光影" });
             modTypeBox.SelectedIndex = 0;
             modTypeBox.SelectedIndexChanged += delegate
             {
@@ -3337,10 +3425,8 @@ namespace MouseLauncher
             modSearchBtn.Click += delegate { ModSearch(); };
 
             Label tLab = new Label(); tLab.Text = "安装到:"; tLab.ForeColor = Theme.TextDim; tLab.SetBounds(546, 43, 52, 20); tLab.BackColor = Color.Transparent;
-            targetVerBox = new ComboBox();
+            targetVerBox = new DarkDropDown();
             targetVerBox.SetBounds(600, 38, 278, 28);
-            targetVerBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            targetVerBox.FlatStyle = FlatStyle.Flat;
             targetVerBox.BackColor = Theme.Card; targetVerBox.ForeColor = Theme.Text;
 
             modResultList = new ListView();
@@ -3827,10 +3913,8 @@ namespace MouseLauncher
             Label presetLab = new Label(); presetLab.Text = "快速选择:"; presetLab.ForeColor = Theme.TextDim;
             presetLab.BackColor = Color.Transparent; presetLab.SetBounds(16, 72, 66, 20);
             cardDir.Controls.Add(presetLab);
-            dirPresetBox = new ComboBox();
+            dirPresetBox = new DarkDropDown();
             dirPresetBox.SetBounds(86, 68, 250, 26);
-            dirPresetBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            dirPresetBox.FlatStyle = FlatStyle.Flat;
             dirPresetBox.BackColor = Theme.CardLight; dirPresetBox.ForeColor = Theme.Text;
             dirPresetBox.SelectedIndexChanged += delegate
             {
@@ -3900,7 +3984,7 @@ namespace MouseLauncher
         }
 
         // ----- 游戏目录管理 -----
-        ComboBox dirPresetBox;
+        DarkDropDown dirPresetBox;
         Label dirCountLab;
         List<string> presetPaths = new List<string>();
 
