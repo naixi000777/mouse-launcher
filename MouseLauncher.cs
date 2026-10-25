@@ -36,6 +36,7 @@ namespace MouseLauncher
                 Console.WriteLine("      mlc -launch <版本号> [玩家名] [内存MB] [javaw路径]");
                 Console.WriteLine("      mlc -runtime <组件名>   如 java-runtime-gamma (自动下载对应 Java)");
                 Console.WriteLine("      mlc -fabric <MC版本> [fabric版本]  安装 Fabric 版本");
+                Console.WriteLine("      mlc -forge <MC版本>     安装 Forge (运行官方安装器)");
                 Console.WriteLine("      mlc -stun               测试公网端点发现");
                 Console.WriteLine("      mlc -mp-test [丢包%]    联机传输回环自测");
                 Console.WriteLine("      mlc -backup / -crashtest");
@@ -133,6 +134,16 @@ namespace MouseLauncher
                     delegate(int pct) { Console.Write("\r{0}%  ", pct); },
                     delegate(string s) { Console.WriteLine(s); });
                 string v = mi.InstallFabric(mcVer, fVer);
+                Console.WriteLine();
+                Console.WriteLine("OK: " + v);
+                Environment.Exit(0);
+            }
+            if (cmd == "forge")
+            {
+                ModInstaller mi = new ModInstaller(Settings.McDir, null,
+                    delegate(int pct) { Console.Write("\rForge: {0}%   ", pct); },
+                    delegate(string s) { Console.WriteLine(s); });
+                string v = mi.InstallForge(args[1]);
                 Console.WriteLine();
                 Console.WriteLine("OK: " + v);
                 Environment.Exit(0);
@@ -638,22 +649,30 @@ namespace MouseLauncher
             return -1;
         }
 
-        // 解析版本 JSON 的 javaVersion; 老版本无该字段则按 jre-legacy / Java 8
+        // 解析版本 JSON 的 javaVersion; 沿 inheritsFrom 链向上找 (Forge 等继承式版本自身无该字段); 老版本无则 jre-legacy / Java 8
         public static void Requirement(string versionJsonPath, out string component, out int major)
         {
-            component = "jre-legacy"; major = 8;
+            component = null; major = 0;
             try
             {
-                JObject vj = JObject.Parse(File.ReadAllText(versionJsonPath, Encoding.UTF8));
-                JToken jv = vj["javaVersion"];
-                if (jv != null)
+                string p = versionJsonPath;
+                for (int hop = 0; hop < 5 && p != null && File.Exists(p); hop++)
                 {
-                    string c = (string)jv["component"];
-                    if (!string.IsNullOrEmpty(c)) component = c;
-                    if (jv["majorVersion"] != null) major = (int)jv["majorVersion"];
+                    JObject vj = JObject.Parse(File.ReadAllText(p, Encoding.UTF8));
+                    JToken jv = vj["javaVersion"];
+                    if (jv != null)
+                    {
+                        string c = (string)jv["component"];
+                        if (!string.IsNullOrEmpty(c)) { component = c; if (jv["majorVersion"] != null) major = (int)jv["majorVersion"]; }
+                        break;
+                    }
+                    string parent = (string)vj["inheritsFrom"];
+                    p = parent == null ? null : Path.Combine(Path.GetDirectoryName(versionJsonPath), "..", parent, parent + ".json");
+                    if (p != null) p = Path.GetFullPath(p);
                 }
             }
             catch { }
+            if (component == null) { component = "jre-legacy"; major = 8; }
         }
 
         // 确保组件已安装到 %AppData%\.minecraft\runtime\<component>\, 返回 javaw.exe 路径
@@ -1581,9 +1600,26 @@ namespace MouseLauncher
                 if (File.Exists(parentPath))
                 {
                     JObject pj = JObject.Parse(File.ReadAllText(parentPath, Encoding.UTF8));
-                    JArray allLibs = (JArray)pj["libraries"];
-                    foreach (JToken l in (JArray)vj["libraries"]) allLibs.Add(l);
-                    if (vj["arguments"] == null) vj["arguments"] = pj["arguments"];
+                    // libraries 继承合并: parent + child 全集 (forge/installer 生成的 json 只含增量)
+                    JArray mergedLibs = new JArray();
+                    foreach (JToken l in (JArray)pj["libraries"]) mergedLibs.Add(l);
+                    if (vj["libraries"] != null) foreach (JToken l in (JArray)vj["libraries"]) mergedLibs.Add(l);
+                    vj["libraries"] = mergedLibs;
+                    if (vj["arguments"] == null && pj["arguments"] != null) { vj["arguments"] = pj["arguments"]; }
+                    else if (vj["arguments"] != null && pj["arguments"] != null)
+                    {
+                        // 继承语义: parent 参数在前, child 追加 (forge child 不含 --username/--accessToken 等 vanilla 参数)
+                        JObject pa = (JObject)pj["arguments"];
+                        JObject ca = (JObject)vj["arguments"];
+                        JArray g = new JArray();
+                        if (pa["game"] != null) foreach (JToken t in (JArray)pa["game"]) g.Add(t);
+                        if (ca["game"] != null) foreach (JToken t in (JArray)ca["game"]) g.Add(t);
+                        ca["game"] = g;
+                        JArray jm = new JArray();
+                        if (pa["jvm"] != null) foreach (JToken t in (JArray)pa["jvm"]) jm.Add(t);
+                        if (ca["jvm"] != null) foreach (JToken t in (JArray)ca["jvm"]) jm.Add(t);
+                        ca["jvm"] = jm;
+                    }
                     if (vj["minecraftArguments"] == null && pj["minecraftArguments"] != null) vj["minecraftArguments"] = pj["minecraftArguments"];
                     if (vj["assetIndex"] == null) vj["assetIndex"] = pj["assetIndex"];
                     if (vj["mainClass"] == null) vj["mainClass"] = pj["mainClass"];
@@ -1591,11 +1627,12 @@ namespace MouseLauncher
                 }
             }
 
-            // 客户端 jar: 版本目录下没有时, Fabric/整合包版本回退到源原版 (xMouseVanillaJar)
+            // 客户端 jar: 版本目录下没有时, Fabric/整合包版本回退到源原版 (xMouseVanillaJar 或 inheritsFrom)
             string jarPath = Path.Combine(vDir, versionId + ".jar");
             if (!File.Exists(jarPath))
             {
                 string srcVanilla = (string)vj["xMouseVanillaJar"];
+                if (string.IsNullOrEmpty(srcVanilla)) srcVanilla = (string)vj["inheritsFrom"];
                 if (!string.IsNullOrEmpty(srcVanilla))
                 {
                     string alt = Path.Combine(McDir, "versions", srcVanilla, srcVanilla + ".jar");
@@ -1696,6 +1733,11 @@ namespace MouseLauncher
                 jvmArgs.Add("-cp");
                 jvmArgs.Add(vars["classpath"]);
             }
+            // Forge 等继承式版本的 jvm 参数只有 -p 模块路径没有 -cp, BootstrapLauncher 需要从 classpath 找 client jar
+            bool hasCp = false;
+            foreach (string a in jvmArgs)
+                if (a == "-cp" || a == "-classpath" || a.StartsWith("-cp=") || a.StartsWith("-classpath=")) { hasCp = true; break; }
+            if (!hasCp) { jvmArgs.Add("-cp"); jvmArgs.Add(vars["classpath"]); }
 
             List<string> gameArgs = new List<string>();
             if (vj["arguments"] != null && vj["arguments"]["game"] != null)
@@ -1909,7 +1951,7 @@ namespace MouseLauncher
             return vName;
         }
 
-        // 一键安装 Modrinth 整合包 (.mrpack)
+        // 一键安装 Modrinth 整合包 (在线下载 .mrpack 后走本地导入)
         public string InstallModpack(JObject versionEntry)
         {
             JObject file = Modrinth.PrimaryFile(versionEntry);
@@ -1917,19 +1959,24 @@ namespace MouseLauncher
             string mrpack = Path.Combine(Path.GetTempPath(), "MouseLauncher_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".mrpack");
             SetStatus("下载整合包文件...");
             try { Web.DownloadFile((string)file["url"], mrpack); } catch { Web.DownloadFile((string)file["url"], mrpack); }
+            try { return ImportModpackFile(mrpack); }
+            finally { try { File.Delete(mrpack); } catch { } }
+        }
 
+        // 本地导入整合包: .mrpack (Modrinth) 完整支持; .zip (CurseForge) 自动装原版/Fabric/覆盖项, 模组文件需手动补
+        public string ImportModpackFile(string packPath)
+        {
             string vName = null;
-            using (ZipArchive zip = ZipFile.OpenRead(mrpack))
+            using (ZipArchive zip = ZipFile.OpenRead(packPath))
             {
                 ZipArchiveEntry indexEntry = zip.GetEntry("modrinth.index.json");
-                if (indexEntry == null) { zip.Dispose(); File.Delete(mrpack); throw new Exception("无效的 .mrpack 文件 (缺少 modrinth.index.json)"); }
+                ZipArchiveEntry cfEntry = zip.GetEntry("manifest.json");
+                if (cfEntry != null && indexEntry == null) return InstallCurseForge(zip, cfEntry);
+                if (indexEntry == null) throw new Exception("无法识别的整合包 (缺少 modrinth.index.json / manifest.json)");
                 JObject idx;
                 using (Stream s = indexEntry.Open()) using (StreamReader sr = new StreamReader(s, Encoding.UTF8)) idx = JObject.Parse(sr.ReadToEnd());
 
-                foreach (char c in Path.GetInvalidFileNameChars()) { }
-                vName = ((string)idx["name"]) ?? ("pack-" + DateTime.Now.ToString("yyyyMMdd-HHmm"));
-                foreach (char c in Path.GetInvalidFileNameChars()) vName = vName.Replace(c, '_');
-                if (vName.Trim().Length == 0) vName = "pack";
+                vName = SanitizeName((string)idx["name"]);
                 string vDir = Path.Combine(McDir, "versions", vName);
                 Directory.CreateDirectory(vDir);
 
@@ -1945,27 +1992,7 @@ namespace MouseLauncher
                 JObject merged = (JObject)vanilla.DeepClone();
                 merged["id"] = vName;
                 merged["xMouseVanillaJar"] = mcDep; // jar 用源原版的
-                if (fabricDep != null)
-                {
-                    SetStatus("获取 Fabric 加载器信息...");
-                    string furl = "https://meta.fabricmc.net/v2/versions/loader/" + mcDep + "/" + fabricDep + "/profile/json";
-                    string fjson = Web.GetText(furl);
-                    JObject fabric = JObject.Parse(fjson);
-                    JArray libs = (JArray)merged["libraries"];
-                    foreach (JToken fl in (JArray)fabric["libraries"]) libs.Add(fl);
-                    merged["mainClass"] = fabric["mainClass"];
-                    if (fabric["arguments"] != null)
-                    {
-                        // game 整体替换; jvm 拼接保留 vanilla 的 -cp/--libs 路径
-                        if (fabric["arguments"]["game"] != null) merged["arguments"]["game"] = fabric["arguments"]["game"];
-                        if (fabric["arguments"]["jvm"] != null)
-                        {
-                            JArray mj = (JArray)(merged["arguments"]["jvm"] ?? new JArray());
-                            foreach (JToken j in (JArray)fabric["arguments"]["jvm"]) mj.Add(j);
-                            merged["arguments"]["jvm"] = mj;
-                        }
-                    }
-                }
+                if (fabricDep != null) MergeFabric(merged, mcDep, fabricDep);
                 File.WriteAllText(Path.Combine(vDir, vName + ".json"), merged.ToString(), Encoding.UTF8);
                 core.DownloadLibs(merged);
                 core.EnsureAssets(merged);
@@ -2003,22 +2030,163 @@ namespace MouseLauncher
                 }
 
                 // 3) overrides
-                int ovCount = 0;
-                foreach (ZipArchiveEntry e in zip.Entries)
-                {
-                    if (!e.FullName.StartsWith("overrides/", StringComparison.Ordinal) || e.FullName == "overrides/") continue;
-                    string rel = e.FullName.Substring("overrides/".Length).Replace('/', '\\');
-                    if (rel.Length == 0 || rel.Contains("..")) continue;
-                    string dest = Path.Combine(vDir, rel);
-                    string d = Path.GetDirectoryName(dest);
-                    if (!string.IsNullOrEmpty(d)) Directory.CreateDirectory(d);
-                    try { e.ExtractToFile(dest, true); ovCount++; } catch { }
-                }
+                int ovCount = ExtractOverrides(zip, "overrides", vDir);
                 Util.Log(LogBox, "整合包安装完成: " + vName + " (" + total + " 个文件, " + ovCount + " 个覆盖项)");
             }
-            File.Delete(mrpack);
             SetProgress(100);
             SetStatus("整合包安装完成");
+            return vName;
+        }
+
+        static string SanitizeName(string name)
+        {
+            string vName = name ?? ("pack-" + DateTime.Now.ToString("yyyyMMdd-HHmm"));
+            foreach (char c in Path.GetInvalidFileNameChars()) vName = vName.Replace(c, '_');
+            if (vName.Trim().Length == 0) vName = "pack";
+            return vName;
+        }
+
+        // Fabric profile 合并 (game 整体替换; jvm 拼接保留 vanilla 的 -cp/--libs 路径)
+        void MergeFabric(JObject merged, string mcDep, string fabricDep)
+        {
+            SetStatus("获取 Fabric 加载器信息...");
+            string furl = "https://meta.fabricmc.net/v2/versions/loader/" + mcDep + "/" + fabricDep + "/profile/json";
+            JObject fabric = JObject.Parse(Web.GetText(furl));
+            JArray libs = (JArray)merged["libraries"];
+            foreach (JToken fl in (JArray)fabric["libraries"]) libs.Add(fl);
+            merged["mainClass"] = fabric["mainClass"];
+            if (fabric["arguments"] != null)
+            {
+                if (fabric["arguments"]["game"] != null) merged["arguments"]["game"] = fabric["arguments"]["game"];
+                if (fabric["arguments"]["jvm"] != null)
+                {
+                    JArray mj = (JArray)(merged["arguments"]["jvm"] ?? new JArray());
+                    foreach (JToken j in (JArray)fabric["arguments"]["jvm"]) mj.Add(j);
+                    merged["arguments"]["jvm"] = mj;
+                }
+            }
+        }
+
+        int ExtractOverrides(ZipArchive zip, string prefix, string vDir)
+        {
+            int ovCount = 0;
+            foreach (ZipArchiveEntry e in zip.Entries)
+            {
+                if (!e.FullName.StartsWith(prefix + "/", StringComparison.Ordinal) || e.FullName == prefix + "/") continue;
+                string rel = e.FullName.Substring(prefix.Length + 1).Replace('/', '\\');
+                if (rel.Length == 0 || rel.Contains("..")) continue;
+                string dest = Path.Combine(vDir, rel);
+                string d = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrEmpty(d)) Directory.CreateDirectory(d);
+                try { e.ExtractToFile(dest, true); ovCount++; } catch { }
+            }
+            return ovCount;
+        }
+
+        // CurseForge 整合包 (.zip 含 manifest.json): 装原版/Fabric/overrides; Forge 需先手动装; 模组文件无法匿名直下
+        string InstallCurseForge(ZipArchive zip, ZipArchiveEntry cfEntry)
+        {
+            JObject mf;
+            using (Stream s = cfEntry.Open()) using (StreamReader sr = new StreamReader(s, Encoding.UTF8)) mf = JObject.Parse(sr.ReadToEnd());
+            string vName = SanitizeName((string)mf["name"]);
+            string mcVer = (string)mf["minecraft"]["version"];
+            string loader = null;
+            JArray mls = (JArray)mf["minecraft"]["modLoaders"];
+            if (mls != null && mls.Count > 0) loader = (string)mls[0]["id"]; // "fabric-0.15.11" / "forge-47.x"
+            Util.Log(LogBox, "CurseForge 整合包: 原版 " + mcVer + (loader != null ? ", 加载器 " + loader : ""));
+            core.EnsureVersion(mcVer);
+
+            if (loader != null && loader.StartsWith("forge", StringComparison.OrdinalIgnoreCase))
+                throw new Exception("该整合包需要 Forge (" + loader + ")。请先在下载页对该版本安装 Forge, 再重新导入 (或手动放置模组)");
+
+            string vDir = Path.Combine(McDir, "versions", vName);
+            Directory.CreateDirectory(vDir);
+            JObject vanilla = JObject.Parse(File.ReadAllText(Path.Combine(McDir, "versions", mcVer, mcVer + ".json"), Encoding.UTF8));
+            JObject merged = (JObject)vanilla.DeepClone();
+            merged["id"] = vName;
+            merged["xMouseVanillaJar"] = mcVer;
+            if (loader != null && loader.StartsWith("fabric-", StringComparison.OrdinalIgnoreCase))
+                MergeFabric(merged, mcVer, loader.Substring("fabric-".Length));
+            File.WriteAllText(Path.Combine(vDir, vName + ".json"), merged.ToString(), Encoding.UTF8);
+            core.DownloadLibs(merged);
+            core.EnsureAssets(merged);
+
+            string ovPrefix = (string)mf["overrides"];
+            if (string.IsNullOrEmpty(ovPrefix)) ovPrefix = "overrides";
+            int ovCount = ExtractOverrides(zip, ovPrefix, vDir);
+
+            int mods = 0;
+            JArray cff = (JArray)mf["files"];
+            if (cff != null) mods = cff.Count;
+            SetProgress(100);
+            SetStatus("导入完成 (CurseForge 模组需手动补)");
+            Util.Log(LogBox, "CurseForge 整合包导入完成: " + vName + " (" + ovCount + " 个覆盖项)。包内 " + mods + " 个模组无法匿名直下, 请手动放入 versions\\" + vName + "\\mods");
+            return vName;
+        }
+
+        // 安装 Forge: 下载官方 installer 后以 --installClient 运行 (1.13+ 不改动原版 jar, 安全)
+        public string InstallForge(string mcVer)
+        {
+            SetStatus("获取 Forge 版本列表...");
+            JArray builds = JArray.Parse(Web.GetText("https://bmclapi2.bangbang93.com/forge/minecraft/" + mcVer));
+            if (builds.Count == 0) throw new Exception("清单中没有 " + mcVer + " 的 Forge 版本");
+            string fv = (string)builds[0]["version"];
+            string vName = mcVer + "-forge-" + fv;
+            string vJson = Path.Combine(McDir, "versions", vName, vName + ".json");
+            if (File.Exists(vJson)) { SetProgress(100); SetStatus("Forge 已安装"); return vName; }
+
+            string instUrl = "https://maven.minecraftforge.net/net/minecraftforge/forge/" + mcVer + "-" + fv + "/forge-" + mcVer + "-" + fv + "-installer.jar";
+            string instJar = Path.Combine(Path.GetTempPath(), "forge-" + mcVer + "-installer.jar");
+            if (!File.Exists(instJar) || new FileInfo(instJar).Length < 1024 * 512)
+            {
+                SetStatus("下载 Forge " + fv + " 安装器...");
+                Web.DownloadFile(instUrl, instJar);
+            }
+            List<string> javas = JavaFinder.Find();
+            if (javas.Count == 0) throw new Exception("未找到 Java, 无法运行 Forge 安装器 (先在启动页选一个 Java)");
+            SetStatus("运行 Forge 安装器 (需联网, 约 1-3 分钟)...");
+            SetProgress(30);
+            ProcessStartInfo psi = new ProcessStartInfo();
+            psi.FileName = javas[0];
+            psi.Arguments = "-jar \"" + instJar + "\" --installClient \"" + McDir + "\"";
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            Process p = Process.Start(psi);
+            string outTail = "";
+            p.OutputDataReceived += delegate(object s, DataReceivedEventArgs e) { if (e.Data != null) lock (outTail) outTail += e.Data + "\n"; };
+            p.ErrorDataReceived += delegate(object s, DataReceivedEventArgs e) { if (e.Data != null) lock (outTail) outTail += e.Data + "\n"; };
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+            if (!p.WaitForExit(10 * 60 * 1000)) { try { p.Kill(); } catch { } throw new Exception("Forge 安装器超时 (10 分钟)"); }
+            if (p.ExitCode != 0)
+            {
+                string tail = outTail.Length > 400 ? outTail.Substring(outTail.Length - 400) : outTail;
+                throw new Exception("Forge 安装器失败 (代码 " + p.ExitCode + "): " + tail.Replace("\n", " | "));
+            }
+            if (!File.Exists(vJson))
+            {
+                // 兜底: 扫描实际生成的 forge 版本目录
+                string vd = Path.Combine(McDir, "versions");
+                foreach (string d in Directory.GetDirectories(vd))
+                {
+                    string n = Path.GetFileName(d);
+                    if (n.StartsWith(mcVer + "-forge", StringComparison.Ordinal) && File.Exists(Path.Combine(d, n + ".json"))) { vName = n; break; }
+                }
+            }
+            try { File.Delete(instJar); } catch { }
+            // client jar 按版本 id 命名复制 (官方语义): ignoreList 按 jar 文件名排除模块层, 名字不对会与 forge 的 minecraft 模块冲突
+            string srcJar = Path.Combine(McDir, "versions", mcVer, mcVer + ".jar");
+            string dstJar = Path.Combine(McDir, "versions", vName, vName + ".jar");
+            if (File.Exists(srcJar) && !File.Exists(dstJar))
+            {
+                SetStatus("复制客户端 jar...");
+                File.Copy(srcJar, dstJar);
+            }
+            SetProgress(100);
+            SetStatus("Forge 安装完成: " + vName);
+            Util.Log(LogBox, "Forge 安装完成: " + vName);
             return vName;
         }
     }
@@ -2202,7 +2370,7 @@ namespace MouseLauncher
         Label statusLab;
         RButton dlBtn, manifestBtn;
         ComboBox fabricBox;
-        RButton fabricBtn;
+        RButton fabricBtn, forgeBtn;
         bool fabricFilled;
         JObject manifest;
         // Mod 页
@@ -2213,6 +2381,7 @@ namespace MouseLauncher
         RoundProgress modBar;
         Label modStatusLab;
         RButton modSearchBtn, modInstallBtn;
+        RButton modImportBtn;
         JArray curResults;
         // 设置页
         TextBox dirBox;
@@ -2711,7 +2880,7 @@ namespace MouseLauncher
             Panel cardD = Card(downloadPage, "下载原版", 20, 14, 894, 548);
 
             searchBox = new TextBox();
-            searchBox.SetBounds(16, 38, 240, 28);
+            searchBox.SetBounds(16, 38, 210, 28);
             searchBox.BackColor = Theme.Card; searchBox.ForeColor = Theme.Text; searchBox.BorderStyle = BorderStyle.FixedSingle;
             Label ph = new Label(); ph.Text = "🔍 搜索版本号..."; ph.ForeColor = Theme.TextDim; ph.SetBounds(6, 4, 130, 20); ph.BackColor = Color.Transparent;
             searchBox.Controls.Add(ph);
@@ -2719,7 +2888,7 @@ namespace MouseLauncher
             searchBox.GotFocus += delegate { ph.Visible = string.IsNullOrEmpty(searchBox.Text); };
 
             filterBox = new ComboBox();
-            filterBox.SetBounds(266, 38, 130, 28);
+            filterBox.SetBounds(234, 38, 110, 28);
             filterBox.DropDownStyle = ComboBoxStyle.DropDownList;
             filterBox.FlatStyle = FlatStyle.Flat;
             filterBox.BackColor = Theme.Card; filterBox.ForeColor = Theme.Text;
@@ -2728,16 +2897,16 @@ namespace MouseLauncher
             filterBox.SelectedIndexChanged += delegate { FillVerList(); };
 
             manifestBtn = new RButton();
-            manifestBtn.Text = "↻ 刷新清单";
+            manifestBtn.Text = "↻ 刷新";
             manifestBtn.Fill = Color.FromArgb(70, 70, 84);
             manifestBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            manifestBtn.SetBounds(406, 37, 100, 30);
+            manifestBtn.SetBounds(352, 37, 76, 30);
             manifestBtn.Click += delegate { LoadManifest(true); };
 
             Label fLab = new Label(); fLab.Text = "Fabric:"; fLab.ForeColor = Theme.TextDim;
-            fLab.BackColor = Color.Transparent; fLab.SetBounds(520, 43, 46, 20);
+            fLab.BackColor = Color.Transparent; fLab.SetBounds(438, 43, 46, 20);
             fabricBox = new ComboBox();
-            fabricBox.SetBounds(568, 38, 110, 28);
+            fabricBox.SetBounds(484, 38, 100, 28);
             fabricBox.DropDownStyle = ComboBoxStyle.DropDownList;
             fabricBox.FlatStyle = FlatStyle.Flat;
             fabricBox.BackColor = Theme.Card; fabricBox.ForeColor = Theme.Text;
@@ -2747,8 +2916,19 @@ namespace MouseLauncher
             fabricBtn.Text = "🧵 装Fabric";
             fabricBtn.Fill = Color.FromArgb(70, 70, 84);
             fabricBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            fabricBtn.SetBounds(684, 37, 104, 30);
+            fabricBtn.SetBounds(590, 37, 100, 30);
             fabricBtn.Click += delegate { InstallFabricClick(); };
+            forgeBtn = new RButton();
+            forgeBtn.Text = "⚒ 装Forge";
+            forgeBtn.Fill = Color.FromArgb(70, 70, 84);
+            forgeBtn.Font = new Font("Microsoft YaHei UI", 9F);
+            forgeBtn.SetBounds(696, 37, 100, 30);
+            forgeBtn.Click += delegate { InstallForgeClick(); };
+            Label tip = new Label();
+            tip.Text = "装到选中的版本";
+            tip.ForeColor = Theme.TextDim;
+            tip.BackColor = Color.Transparent;
+            tip.SetBounds(802, 43, 80, 20);
 
             verList = new ListView();
             verList.SetBounds(16, 76, 862, 384);
@@ -2788,7 +2968,48 @@ namespace MouseLauncher
                 StartDownload();
             };
 
-            cardD.Controls.AddRange(new Control[] { searchBox, filterBox, manifestBtn, fLab, fabricBox, fabricBtn, verList, bar, statusLab, dlBtn });
+            cardD.Controls.AddRange(new Control[] { searchBox, filterBox, manifestBtn, fLab, fabricBox, fabricBtn, forgeBtn, tip, verList, bar, statusLab, dlBtn });
+        }
+
+        void InstallForgeClick()
+        {
+            if (verList.SelectedItems.Count == 0)
+            {
+                statusLab.Text = "先在列表选中一个原版版本, 再装 Forge";
+                return;
+            }
+            string mcVer = verList.SelectedItems[0].Text;
+            forgeBtn.Enabled = false; dlBtn.Enabled = false; fabricBtn.Enabled = false; manifestBtn.Enabled = false; verList.Enabled = false;
+            Log("为 " + mcVer + " 安装 Forge...");
+            statusLab.Text = "安装 Forge...";
+            ModInstaller mi = new ModInstaller(Settings.McDir, logBox,
+                delegate(int pct) { try { BeginInvoke((MethodInvoker)delegate { bar.Value = Math.Min(100, Math.Max(0, pct)); }); } catch { } },
+                delegate(string s) { try { BeginInvoke((MethodInvoker)delegate { statusLab.Text = s; }); } catch { } });
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                try
+                {
+                    string vName = mi.InstallForge(mcVer);
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        statusLab.Text = "Forge 安装完成 ✓";
+                        bar.Value = 0;
+                        forgeBtn.Enabled = true; dlBtn.Enabled = true; fabricBtn.Enabled = true; manifestBtn.Enabled = true; verList.Enabled = true;
+                        ScanVersions();
+                        FillVerList();
+                        MessageBox.Show(this, "Forge 版本 " + vName + " 安装完成!\n到「启动」页选择它即可, 或到 Mod 页往里装 mod。", "老鼠启动器", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Log("Forge 安装失败: " + ex.Message);
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        statusLab.Text = "Forge 安装失败: " + ex.Message;
+                        forgeBtn.Enabled = true; dlBtn.Enabled = true; fabricBtn.Enabled = true; manifestBtn.Enabled = true; verList.Enabled = true;
+                    });
+                }
+            });
         }
 
         void LoadManifest() { LoadManifest(false); }
@@ -3052,8 +3273,61 @@ namespace MouseLauncher
             modInstallBtn.Enabled = false;
             modInstallBtn.Click += delegate { InstallSelected(); };
 
+            // 卡标题行右端: 本地导入 + 社区链接
+            modImportBtn = new RButton();
+            modImportBtn.Text = "📂 导入整合包";
+            modImportBtn.Fill = Color.FromArgb(70, 70, 84);
+            modImportBtn.Font = new Font("Microsoft YaHei UI", 8.5F);
+            modImportBtn.SetBounds(646, 7, 110, 24);
+            modImportBtn.Click += delegate { ImportModpackClick(); };
+            RButton wikiBtn = new RButton();
+            wikiBtn.Text = "🔗 MC百科";
+            wikiBtn.Fill = Color.FromArgb(70, 70, 84);
+            wikiBtn.Font = new Font("Microsoft YaHei UI", 8.5F);
+            wikiBtn.SetBounds(764, 7, 114, 24);
+            wikiBtn.Click += delegate { try { Process.Start("https://www.mcmod.cn/"); } catch { } };
+
             cardM.Controls.AddRange(new Control[] { modTypeBox, modSearchBox, modSearchBtn, tLab, targetVerBox,
-                modResultList, modVerList, modBar, modStatusLab, modInstallBtn });
+                modResultList, modVerList, modBar, modStatusLab, modInstallBtn, modImportBtn, wikiBtn });
+        }
+
+        void ImportModpackClick()
+        {
+            using (OpenFileDialog d = new OpenFileDialog())
+            {
+                d.Filter = "整合包 (*.mrpack;*.zip)|*.mrpack;*.zip";
+                d.Title = "导入整合包";
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                string path = d.FileName;
+                modImportBtn.Enabled = false; modSearchBtn.Enabled = false; modInstallBtn.Enabled = false;
+                Log("导入整合包: " + path);
+                ModInstaller mi = new ModInstaller(Settings.McDir, logBox,
+                    delegate(int pct) { try { BeginInvoke((MethodInvoker)delegate { modBar.Value = Math.Min(100, Math.Max(0, pct)); }); } catch { } },
+                    delegate(string s) { try { BeginInvoke((MethodInvoker)delegate { modStatusLab.Text = s; }); } catch { } });
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    try
+                    {
+                        string vName = mi.ImportModpackFile(path);
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            ScanVersions();
+                            FillTargetVersions();
+                            modImportBtn.Enabled = true; modSearchBtn.Enabled = true;
+                            MessageBox.Show(this, "整合包导入完成!\n新版本: " + vName + "\n去「启动」页选择它即可游玩。", "老鼠启动器", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log("导入失败: " + ex.Message);
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            modStatusLab.Text = "导入失败: " + ex.Message;
+                            modImportBtn.Enabled = true; modSearchBtn.Enabled = true;
+                        });
+                    }
+                });
+            }
         }
 
         void FillTargetVersions()
