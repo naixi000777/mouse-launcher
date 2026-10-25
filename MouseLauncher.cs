@@ -50,7 +50,7 @@ namespace MouseLauncher
             if (cmd == "download")
             {
                 string want = args[1];
-                string mcDir = args.Length > 2 ? args[2] : "D:\\pcl2\\.minecraft";
+                string mcDir = args.Length > 2 ? args[2] : Settings.McDir;
                 VanillaDownloader dl = new VanillaDownloader(mcDir, null,
                     delegate(int pct) { Console.Write("\r进度: {0}%   ", pct); },
                     delegate(string s) { Console.WriteLine(s); });
@@ -293,7 +293,24 @@ namespace MouseLauncher
     // ---------- 设置 ----------
     static class Settings
     {
-        public static string McDir = "D:\\pcl2\\.minecraft";
+        public static string McDir = DetectMcDir();
+
+        // 游戏目录智能探测: 首次运行 (无 ini) 时按常见位置找, 不再写死开发机路径
+        public static string DetectMcDir()
+        {
+            string roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string[] candidates = new string[] {
+                Path.Combine(roaming, ".minecraft"),
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".minecraft"),
+                "D:\\pcl2\\.minecraft", "C:\\pcl2\\.minecraft", "E:\\pcl2\\.minecraft",
+                "D:\\.minecraft", "C:\\.minecraft"
+            };
+            foreach (string c in candidates)
+            {
+                try { if (Directory.Exists(Path.Combine(c, "versions"))) return c; } catch { }
+            }
+            return Path.Combine(roaming, ".minecraft"); // 兜底: 下载时会自动创建
+        }
         public static string PlayerName = "naixi";
         public static int MemoryMB = 2048;
         public static string WinPos = "";
@@ -2174,6 +2191,8 @@ namespace MouseLauncher
         TextBox nameBox, logBox;
         MouseSlider memTrack;
         Label memLabel, gameStatLab, javaNeedLab;
+        RButton killGameBtn;
+        Process gameProc;
         RButton launchBtn, refreshBtn, deleteBtn, javaBrowseBtn;
         // 下载页
         TextBox searchBox;
@@ -2653,12 +2672,27 @@ namespace MouseLauncher
             logTitle.SetBounds(22, 292, 120, 20);
             logTitle.BackColor = Color.Transparent;
             gameStatLab = new Label();
-            gameStatLab.Text = "○ 未在运行";
+            gameStatLab.Text = "○ 未运行";
             gameStatLab.ForeColor = Theme.TextDim;
             gameStatLab.BackColor = Color.Transparent;
-            gameStatLab.SetBounds(676, 292, 240, 20);
+            gameStatLab.SetBounds(816, 292, 100, 20);
             gameStatLab.TextAlign = ContentAlignment.MiddleRight;
             launchPage.Controls.Add(gameStatLab);
+            killGameBtn = new RButton();
+            killGameBtn.Text = "⛔ 结束游戏";
+            killGameBtn.Fill = Color.FromArgb(150, 70, 70);
+            killGameBtn.Font = new Font("Microsoft YaHei UI", 8.5F);
+            killGameBtn.SetBounds(700, 288, 108, 26);
+            killGameBtn.Visible = false;
+            killGameBtn.Click += delegate
+            {
+                try
+                {
+                    if (gameProc != null && !gameProc.HasExited) { gameProc.Kill(); Log("已强制结束游戏"); }
+                }
+                catch { }
+            };
+            launchPage.Controls.Add(killGameBtn);
             logBox = new TextBox();
             logBox.Multiline = true; logBox.ReadOnly = true; logBox.ScrollBars = ScrollBars.Vertical;
             logBox.BackColor = Theme.Console; logBox.ForeColor = Color.FromArgb(210, 230, 210);
@@ -3514,7 +3548,10 @@ namespace MouseLauncher
             catch { }
             if (versionBox.Items.Count > 0) versionBox.SelectedIndex = 0;
             if (targetVerBox != null) FillTargetVersions();
-            Log("已扫描到 " + versionBox.Items.Count + " 个版本");
+            if (versionBox.Items.Count == 0)
+                Log("未扫到版本。当前游戏目录: " + Settings.McDir + "\n若游戏装在别处, 请到「设置」页点「更改...」选择; 也可直接用下载页下载新版本");
+            else
+                Log("已扫描到 " + versionBox.Items.Count + " 个版本 (目录: " + Settings.McDir + ")");
         }
 
         void DeleteVersion()
@@ -3637,14 +3674,16 @@ namespace MouseLauncher
                 {
                     GameLauncher gl = new GameLauncher(Settings.McDir, useJava, name, memTrack.Value, logBox);
                     Process gp = gl.Launch(vid);
+                    gameProc = gp;
                     try
                     {
                         BeginInvoke((MethodInvoker)delegate
                         {
                             launchBtn.Enabled = true;
                             launchBtn.Text = "⛏ 游戏运行中...";
-                            gameStatLab.Text = "● 游戏运行中";
+                            gameStatLab.Text = "● 运行中";
                             gameStatLab.ForeColor = Theme.Green;
+                            killGameBtn.Visible = true;
                             WindowState = FormWindowState.Minimized;
                         });
                     }
@@ -3655,8 +3694,9 @@ namespace MouseLauncher
                         BeginInvoke((MethodInvoker)delegate
                         {
                             launchBtn.Text = "▶  启 动 游 戏";
-                            gameStatLab.Text = "○ 未在运行";
+                            gameStatLab.Text = "○ 未运行";
                             gameStatLab.ForeColor = Theme.TextDim;
+                            killGameBtn.Visible = false;
                         });
                     }
                     catch { }
