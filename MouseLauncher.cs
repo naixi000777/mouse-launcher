@@ -2527,9 +2527,9 @@ namespace MouseLauncher
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            PaintGlow(e.Graphics, new Rectangle(560, -160, 720, 460), Theme.Accent, 70);
-            PaintGlow(e.Graphics, new Rectangle(-180, 300, 560, 480), Color.FromArgb(150, 90, 220), 55);
-            PaintGlow(e.Graphics, new Rectangle(430, 430, 620, 420), Color.FromArgb(60, 190, 170), 45);
+            PaintGlow(e.Graphics, new Rectangle(700, -190, 560, 300), Theme.Accent, 45);
+            PaintGlow(e.Graphics, new Rectangle(-170, 320, 500, 470), Color.FromArgb(150, 90, 220), 60);
+            PaintGlow(e.Graphics, new Rectangle(240, 560, 640, 260), Color.FromArgb(60, 190, 170), 40);
             using (Pen p = new Pen(Color.FromArgb(90, 255, 255, 255), 1f))
                 e.Graphics.DrawPath(p, Util.Round(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 14));
         }
@@ -2761,7 +2761,7 @@ namespace MouseLauncher
         {
             Panel card = new Panel();
             card.SetBounds(x, y, w, h);
-            card.BackColor = Color.FromArgb(165, 40, 40, 54); // 玻璃: 极光背景透出
+            card.BackColor = Color.FromArgb(190, 40, 40, 54); // 玻璃: 微透极光, 卡面色差最小化
             card.Paint += delegate(object s, PaintEventArgs e)
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
