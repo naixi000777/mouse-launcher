@@ -147,8 +147,8 @@ namespace MouseLauncherInstaller
             dirBox.BackColor = Color.FromArgb(62, 62, 74);
             dirBox.ForeColor = Color.FromArgb(235, 235, 240);
             dirBox.BorderStyle = BorderStyle.FixedSingle;
-            string defDir = @"D:\老鼠启动器";
-            dirBox.Text = defDir;
+            // 不预设安装目录: 由用户自己选择(点「浏览...」或在框内直接输入)
+            dirBox.Text = "";
             browseBtn = new Button();
             browseBtn.Text = "浏览...";
             browseBtn.SetBounds(418, 58, 66, 28);
@@ -159,7 +159,13 @@ namespace MouseLauncherInstaller
             {
                 using (FolderBrowserDialog d = new FolderBrowserDialog())
                 {
-                    if (d.ShowDialog(this) == DialogResult.OK) dirBox.Text = d.SelectedPath;
+                    d.Description = "选择 老鼠启动器 的安装目录";
+                    d.ShowNewFolderButton = true;
+                    if (d.ShowDialog(this) == DialogResult.OK)
+                    {
+                        dirBox.Text = d.SelectedPath;
+                        statusLab.Text = "将安装到: " + d.SelectedPath;
+                    }
                 }
             };
 
@@ -173,7 +179,7 @@ namespace MouseLauncherInstaller
             bar.SetBounds(22, 140, 460, 22);
 
             statusLab = new Label();
-            statusLab.Text = "准备安装...";
+            statusLab.Text = "请先选择安装目录 (点「浏览...」或直接输入路径)";
             statusLab.ForeColor = Color.FromArgb(150, 150, 160);
             statusLab.SetBounds(22, 168, 460, 20);
 
@@ -198,7 +204,20 @@ namespace MouseLauncherInstaller
         void DoInstall()
         {
             string dir = dirBox.Text.Trim();
-            if (dir.Length == 0) { MessageBox.Show("请填写安装目录"); return; }
+            if (dir.Length == 0)
+            {
+                MessageBox.Show(this, "请先选择安装目录 (点「浏览...」或直接输入路径)", "安装向导",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                browseBtn.PerformClick();
+                return;
+            }
+            if (dir.EndsWith(":\\") || dir.EndsWith(":/"))
+            {
+                MessageBox.Show(this, "不要把启动器直接装到盘符根目录, 请选择一个文件夹", "安装向导",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            dir = dir.TrimEnd('\\');
             installBtn.Enabled = false; browseBtn.Enabled = false; dirBox.Enabled = false;
             bool run = runChk.Checked;
             ThreadPool.QueueUserWorkItem(delegate

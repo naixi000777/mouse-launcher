@@ -2715,12 +2715,7 @@ namespace MouseLauncher
             titleBar.BackColor = Color.FromArgb(180, 28, 28, 40);
             titleBar.MouseMove += TitleMove;
             titleBar.MouseDoubleClick += delegate { ToggleMax(); };
-            titleBar.Paint += delegate(object s, PaintEventArgs e)
-            {
-                // 底部 2px 强调色渐变线 (左实右淡)
-                using (LinearGradientBrush g = new LinearGradientBrush(new Rectangle(0, titleBar.Height - 2, titleBar.Width, 2), Theme.Accent, Color.FromArgb(30, Theme.Accent), 0f))
-                    e.Graphics.FillRectangle(g, 0, titleBar.Height - 2, titleBar.Width, 2);
-            };
+            // 不做底部强调线: 顶栏与页面同色调, 上下无接缝(只留窗口按钮)
             Controls.Add(titleBar);
 
             // 顶栏只留窗口按钮: 不放 logo / 标题, 留出干净的空白(可拖动)
