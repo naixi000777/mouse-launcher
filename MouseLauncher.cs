@@ -1686,16 +1686,19 @@ namespace MouseLauncher
             // 版本隔离: versions\<id>\mods 存在时工作目录切到版本目录, mod/存档/配置各版本独立
             string workDir = Directory.Exists(Path.Combine(vDir, "mods")) ? vDir : McDir;
             LastWorkDir = workDir;
-            EnsureChinese(workDir);
-            // 启动前备份该目录存档 (含隔离目录); 备份失败不阻断启动
-            if (Settings.AutoBackup)
+            if (!PrintArgsOnly) // 诊断模式: 组装照常, 跳过所有副作用
             {
-                try
+                EnsureChinese(workDir);
+                // 启动前备份该目录存档 (含隔离目录); 备份失败不阻断启动
+                if (Settings.AutoBackup)
                 {
-                    string bz = Util.BackupSaves(workDir, Path.Combine(McDir, "backups"));
-                    if (bz != null) Util.Log(LogBox, "存档已备份: " + Path.GetFileName(bz));
+                    try
+                    {
+                        string bz = Util.BackupSaves(workDir, Path.Combine(McDir, "backups"));
+                        if (bz != null) Util.Log(LogBox, "存档已备份: " + Path.GetFileName(bz));
+                    }
+                    catch (Exception bex) { Util.Log(LogBox, "备份失败(不影响启动): " + bex.Message); }
                 }
-                catch (Exception bex) { Util.Log(LogBox, "备份失败(不影响启动): " + bex.Message); }
             }
             Dictionary<string, string> vars = new Dictionary<string, string>();
             vars["auth_player_name"] = PlayerName;
@@ -3031,9 +3034,11 @@ namespace MouseLauncher
             });
         }
 
-        // Forge 版本下拉: 按选中的 MC 版本从 BMCLAPI 拉取 (前 12 个, 首个为最新)
+        // Forge 版本下拉: 按选中的 MC 版本从 BMCLAPI 拉取 (前 12 个, 首个为最新); 代际令牌防旧响应覆盖新请求
+        int forgeListGen;
         void LoadForgeVersions(string mcVer)
         {
+            int gen = ++forgeListGen;
             ThreadPool.QueueUserWorkItem(delegate
             {
                 List<string> vs = new List<string>();
@@ -3054,6 +3059,7 @@ namespace MouseLauncher
                     {
                         try
                         {
+                            if (gen != forgeListGen) return; // 已有更新的请求, 丢弃过期结果
                             forgeBox.Items.Clear();
                             forgeBox.Items.Add("最新");
                             foreach (string v in vs) forgeBox.Items.Add(v);
