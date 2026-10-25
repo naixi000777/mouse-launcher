@@ -2513,7 +2513,6 @@ namespace MouseLauncher
 
         Panel titleBar, sidebar, pageHost;
         NavItem navLaunch, navDownload, navMod, navSettings, navMp;
-        Label titleLabel;
         Image LogoImg;
         // 启动页
         DarkDropDown versionBox, javaBox;
@@ -2724,23 +2723,7 @@ namespace MouseLauncher
             };
             Controls.Add(titleBar);
 
-            if (LogoImg != null)
-            {
-                PictureBox logoS = new PictureBox();
-                logoS.Image = LogoImg;
-                logoS.SetBounds(186, 11, 24, 24);
-                logoS.SizeMode = PictureBoxSizeMode.Zoom;
-                logoS.BackColor = Color.Transparent;
-                titleBar.Controls.Add(logoS);
-            }
-            titleLabel = new Label();
-            titleLabel.Text = "老鼠启动器";
-            titleLabel.Font = new Font("Microsoft YaHei UI", 11.5F, FontStyle.Bold);
-            titleLabel.ForeColor = Theme.Text;
-            titleLabel.AutoSize = true;
-            titleLabel.Location = new Point(218, 11);
-            titleLabel.MouseMove += TitleMove;
-            titleBar.Controls.Add(titleLabel);
+            // 顶栏只留窗口按钮: 不放 logo / 标题, 留出干净的空白(可拖动)
 
             TitleButton minBtn = new TitleButton("—");
             minBtn.SetBounds(Width - 96, 0, 40, 46);
@@ -2940,37 +2923,37 @@ namespace MouseLauncher
             cardJ.Controls.Add(javaNeedLab);
 
             // 版本卡
-            Panel cardV = Card(launchPage, "游戏版本 (与 PCL 共用)", 20, 122, 620, 96);
+            Panel cardV = Card(launchPage, "游戏版本 (与 PCL 共用)", 20, 122, 620, 104);
             versionBox = new DarkDropDown();
-            versionBox.SetBounds(16, 26, 260, 26);
+            versionBox.SetBounds(16, 34, 260, 26);
             versionBox.BackColor = Theme.CardLight; versionBox.ForeColor = Theme.Text;
             versionBox.SelectedIndexChanged += delegate { UpdateJavaHint(); };
             refreshBtn = new RButton();
             refreshBtn.Text = "↻ 刷新";
             refreshBtn.Fill = Color.FromArgb(70, 70, 84);
             refreshBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            refreshBtn.SetBounds(286, 25, 80, 30);
+            refreshBtn.SetBounds(286, 32, 80, 30);
             refreshBtn.Click += delegate { ScanVersions(); };
             deleteBtn = new RButton();
             deleteBtn.Text = "🗑 删除";
             deleteBtn.Fill = Color.FromArgb(150, 70, 70);
             deleteBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            deleteBtn.SetBounds(376, 25, 84, 30);
+            deleteBtn.SetBounds(376, 32, 84, 30);
             deleteBtn.Click += delegate { DeleteVersion(); };
             Label l3 = new Label(); l3.Text = "删除会移除该版本的文件夹(不影响存档)"; l3.ForeColor = Theme.TextDim;
-            l3.SetBounds(16, 62, 400, 18); l3.BackColor = Color.Transparent; l3.Font = new Font("Microsoft YaHei UI", 8F);
+            l3.SetBounds(16, 68, 420, 18); l3.BackColor = Color.Transparent; l3.Font = new Font("Microsoft YaHei UI", 8F);
             cardV.Controls.Add(versionBox); cardV.Controls.Add(refreshBtn); cardV.Controls.Add(deleteBtn); cardV.Controls.Add(l3);
 
             // 内存卡
-            Panel cardM = Card(launchPage, "内存", 654, 122, 262, 96);
+            Panel cardM = Card(launchPage, "内存", 654, 122, 262, 104);
             memLabel = new Label();
             memLabel.Text = Settings.MemoryMB + " MB";
             memLabel.ForeColor = Theme.Text;
             memLabel.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
-            memLabel.SetBounds(212, 40, 70, 24);
+            memLabel.SetBounds(212, 42, 70, 24);
             memLabel.BackColor = Color.Transparent;
             memTrack = new MouseSlider();
-            memTrack.SetBounds(8, 28, 198, 44);
+            memTrack.SetBounds(8, 30, 198, 44);
             memTrack.Minimum = 512; memTrack.Maximum = 8192;
             memTrack.OnValueChanged = delegate(int v)
             {
@@ -2985,12 +2968,12 @@ namespace MouseLauncher
             launchBtn.Text = "▶  启 动 游 戏";
             launchBtn.Fill = Theme.Green;
             launchBtn.Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold);
-            launchBtn.SetBounds(20, 230, 620, 52);
+            launchBtn.SetBounds(20, 236, 620, 52);
             launchBtn.Click += delegate { DoLaunch(); };
             launchPage.Controls.Add(launchBtn);
 
             // 日志卡
-            Panel cardL = Card(launchPage, "运行日志", 20, 284, 896, 288);
+            Panel cardL = Card(launchPage, "运行日志", 20, 292, 896, 288);
             gameStatLab = new Label();
             gameStatLab.Text = "○ 未运行";
             gameStatLab.ForeColor = Theme.TextDim;
