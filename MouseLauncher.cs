@@ -2039,6 +2039,88 @@ namespace MouseLauncher
         protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
     }
 
+    // ---------- UI: 深色滑块 (替代原生 TrackBar) ----------
+    class MouseSlider : Control
+    {
+        public int Minimum = 512, Maximum = 8192;
+        int val;
+        bool dragging;
+        public Action<int> OnValueChanged;
+
+        public int Value
+        {
+            get { return val; }
+            set { val = Math.Max(Minimum, Math.Min(Maximum, value)); Invalidate(); if (OnValueChanged != null) OnValueChanged(val); }
+        }
+
+        public MouseSlider()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            Cursor = Cursors.Hand;
+        }
+
+        int ThumbX()
+        {
+            float frac = (float)(val - Minimum) / Math.Max(1, Maximum - Minimum);
+            return (int)(10 + frac * (Width - 20));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            int cy = Height / 2;
+            using (Pen p = new Pen(Color.FromArgb(70, 70, 84), 6))
+                e.Graphics.DrawLine(p, 10, cy, Width - 10, cy);
+            using (Pen p = new Pen(Theme.Accent, 6))
+                e.Graphics.DrawLine(p, 10, cy, ThumbX(), cy);
+            int tx = ThumbX();
+            using (SolidBrush b = new SolidBrush(dragging ? ControlPaint.Light(Theme.Accent, 0.15f) : Theme.Accent))
+                e.Graphics.FillEllipse(b, tx - 9, cy - 9, 18, 18);
+            using (SolidBrush b = new SolidBrush(Color.White))
+                e.Graphics.FillEllipse(b, tx - 4, cy - 4, 8, 8);
+        }
+
+        void Apply(MouseEventArgs e)
+        {
+            float frac = (e.X - 10f) / Math.Max(1, Width - 20);
+            frac = Math.Max(0f, Math.Min(1f, frac));
+            int nv = Minimum + (int)(frac * (Maximum - Minimum) / 256) * 256; // 256MB 步进
+            Value = nv;
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e) { dragging = true; Apply(e); Invalidate(); base.OnMouseDown(e); }
+        protected override void OnMouseMove(MouseEventArgs e) { if (dragging) Apply(e); base.OnMouseMove(e); }
+        protected override void OnMouseUp(MouseEventArgs e) { dragging = false; Invalidate(); base.OnMouseUp(e); }
+    }
+
+    // ---------- UI: 圆角进度条 (替代原生 ProgressBar) ----------
+    class RoundProgress : Control
+    {
+        int val;
+        public int Value
+        {
+            get { return val; }
+            set { val = Math.Max(0, Math.Min(100, value)); Invalidate(); }
+        }
+        public RoundProgress()
+        {
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (GraphicsPath track = Util.Round(new RectangleF(0, 0, Width - 1, Height - 1), Height / 2))
+            using (SolidBrush tb = new SolidBrush(Color.FromArgb(46, 46, 56)))
+                e.Graphics.FillPath(tb, track);
+            int w = (int)((Width - 2) * (val / 100f));
+            if (w >= Height / 2 && val > 0)
+                using (GraphicsPath fill = Util.Round(new RectangleF(1, 1, Math.Max(Height - 2, w), Height - 2), (Height - 2) / 2))
+                using (LinearGradientBrush gb = new LinearGradientBrush(new Rectangle(0, 0, w, Height), Theme.Accent, ControlPaint.Dark(Theme.Accent, 0.12f), 0f))
+                    e.Graphics.FillPath(gb, fill);
+        }
+    }
+
     // ---------- UI: 侧栏导航项 ----------
     class NavItem : Control
     {
@@ -2083,14 +2165,14 @@ namespace MouseLauncher
         // 启动页
         ComboBox versionBox, javaBox;
         TextBox nameBox, logBox;
-        TrackBar memTrack;
+        MouseSlider memTrack;
         Label memLabel, gameStatLab, javaNeedLab;
         RButton launchBtn, refreshBtn, deleteBtn, javaBrowseBtn;
         // 下载页
         TextBox searchBox;
         ComboBox filterBox;
         ListView verList;
-        ProgressBar bar;
+        RoundProgress bar;
         Label statusLab;
         RButton dlBtn, manifestBtn;
         ComboBox fabricBox;
@@ -2102,7 +2184,7 @@ namespace MouseLauncher
         TextBox modSearchBox;
         ComboBox modTypeBox, targetVerBox;
         ListView modResultList, modVerList;
-        ProgressBar modBar;
+        RoundProgress modBar;
         Label modStatusLab;
         RButton modSearchBtn, modInstallBtn;
         JArray curResults;
@@ -2146,21 +2228,24 @@ namespace MouseLauncher
             pageHost.BackColor = Theme.Bg;
             Controls.Add(pageHost);
 
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "tc-start\n"); } catch { }
             BuildLaunchPage();
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-launch\n"); } catch { }
             BuildDownloadPage();
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-dl\n"); } catch { }
             BuildModPage();
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-mod\n"); } catch { }
             BuildSettingsPage();
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-set\n"); } catch { }
             BuildMpPage();
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-mp\n"); } catch { }
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t1-before-darkcombo\n"); } catch { }
             DarkCombo(javaBox); DarkCombo(versionBox); DarkCombo(filterBox); DarkCombo(fabricBox);
             DarkCombo(modTypeBox); DarkCombo(targetVerBox);
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t2-after-darkcombo\n"); } catch { }
+            DarkList(verList); DarkList(modResultList); DarkList(modVerList);
+            // 各页微渐变底 (增加层次, 幅度极小避免与标签底色冲突)
+            foreach (Panel pg in new Panel[] { launchPage, downloadPage, modPage, settingsPage, mpPage })
+            {
+                Panel pgp = pg;
+                pgp.Paint += delegate(object s, PaintEventArgs e)
+                {
+                    using (LinearGradientBrush g = new LinearGradientBrush(pgp.ClientRectangle, Color.FromArgb(38, 38, 46), Color.FromArgb(41, 41, 52), 55f))
+                        e.Graphics.FillRectangle(g, pgp.ClientRectangle);
+                };
+            }
             StartLanWatcher();
 
             // 恢复上次窗口位置 (仅当落点在某个屏幕工作区内)
@@ -2179,10 +2264,8 @@ namespace MouseLauncher
             catch { }
 
             ShowPage(navLaunch);
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t3-after-showpage\n"); } catch { }
             ScanJava();
             ScanVersions();
-            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t4-after-scan\n"); } catch { }
             Log("老鼠启动器 v1.1 就绪 by osaka  游戏目录: " + Settings.McDir);
             FormClosed += delegate { Settings.WinPos = Left + "," + Top; Settings.Save(); };
         }
@@ -2205,6 +2288,37 @@ namespace MouseLauncher
             };
         }
 
+        // ListView 表头深色化 (行内容仍走系统默认绘制)
+        void DarkList(ListView lv)
+        {
+            lv.OwnerDraw = true;
+            lv.DrawColumnHeader += delegate(object s, DrawListViewColumnHeaderEventArgs e)
+            {
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(44, 44, 54))) e.Graphics.FillRectangle(b, e.Bounds);
+                TextRenderer.DrawText(e.Graphics, e.Header.Text, new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+                    new Rectangle(e.Bounds.X + 6, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height),
+                    Theme.TextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+            };
+            lv.DrawSubItem += delegate(object s, DrawListViewSubItemEventArgs e) { e.DrawDefault = true; };
+            lv.Resize += delegate { PadEnd(lv); };
+            lv.HandleCreated += delegate { try { lv.BeginInvoke((MethodInvoker)delegate { PadEnd(lv); }); } catch { } };
+        }
+
+        // 末列补满/收敛到剩余宽度 (双向: 垂直滚动条出现后 ClientWidth 变小需回缩)
+        void PadEnd(ListView lv)
+        {
+            if (lv.Columns.Count == 0) return;
+            int used = 0;
+            foreach (ColumnHeader c in lv.Columns) used += c.Width;
+            int diff = lv.ClientSize.Width - used;
+            if (diff != 0)
+            {
+                int last = lv.Columns.Count - 1;
+                int nw = lv.Columns[last].Width + diff;
+                if (nw > 60) lv.Columns[last].Width = nw;
+            }
+        }
+
         // ----- 窗口框架 -----
         void BuildChrome()
         {
@@ -2214,6 +2328,12 @@ namespace MouseLauncher
             titleBar.BackColor = Theme.Sidebar;
             titleBar.MouseMove += TitleMove;
             titleBar.MouseDoubleClick += delegate { ToggleMax(); };
+            titleBar.Paint += delegate(object s, PaintEventArgs e)
+            {
+                // 底部 2px 强调色渐变线 (左实右淡)
+                using (LinearGradientBrush g = new LinearGradientBrush(new Rectangle(0, titleBar.Height - 2, titleBar.Width, 2), Theme.Accent, Color.FromArgb(30, Theme.Accent), 0f))
+                    e.Graphics.FillRectangle(g, 0, titleBar.Height - 2, titleBar.Width, 2);
+            };
             Controls.Add(titleBar);
 
             if (LogoImg != null)
@@ -2359,10 +2479,14 @@ namespace MouseLauncher
             card.Paint += delegate(object s, PaintEventArgs e)
             {
                 e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using (GraphicsPath p = Util.Round(new RectangleF(0.5f, 0.5f, card.Width - 1, card.Height - 1), 10))
-                using (Pen pen = new Pen(Color.FromArgb(70, 70, 82))) e.Graphics.DrawPath(pen, p);
-                TextRenderer.DrawText(e.Graphics, title, new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-                    new Rectangle(16, 10, 300, 20), Theme.TextDim, TextFormatFlags.Left);
+                using (GraphicsPath p = Util.Round(new RectangleF(0.5f, 0.5f, card.Width - 1, card.Height - 1), 12))
+                {
+                    using (SolidBrush b = new SolidBrush(Color.FromArgb(8, 255, 255, 255))) e.Graphics.FillPath(b, p);
+                    using (Pen pen = new Pen(Color.FromArgb(66, 66, 80))) e.Graphics.DrawPath(pen, p);
+                }
+                using (SolidBrush dot = new SolidBrush(Theme.Accent)) e.Graphics.FillEllipse(dot, 18, 16, 7, 7);
+                TextRenderer.DrawText(e.Graphics, title, new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
+                    new Rectangle(34, 8, 320, 24), Theme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
             };
             parent.Controls.Add(card);
             pageCards.Add(card);
@@ -2458,22 +2582,21 @@ namespace MouseLauncher
 
             // 内存卡
             Card(launchPage, "内存", 654, 122, 262, 96);
-            memTrack = new TrackBar();
-            memTrack.SetBounds(660, 152, 200, 45);
-            memTrack.Minimum = 512; memTrack.Maximum = 8192;
-            memTrack.TickFrequency = 512; memTrack.SmallChange = 256; memTrack.LargeChange = 1024;
-            memTrack.Value = Math.Max(512, Math.Min(8192, Settings.MemoryMB));
             memLabel = new Label();
             memLabel.Text = Settings.MemoryMB + " MB";
             memLabel.ForeColor = Theme.Text;
             memLabel.Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold);
             memLabel.SetBounds(866, 162, 70, 24);
             memLabel.BackColor = Theme.Card;
-            memTrack.ValueChanged += delegate
+            memTrack = new MouseSlider();
+            memTrack.SetBounds(662, 150, 198, 44);
+            memTrack.Minimum = 512; memTrack.Maximum = 8192;
+            memTrack.OnValueChanged = delegate(int v)
             {
-                memLabel.Text = memTrack.Value + " MB";
-                Settings.MemoryMB = memTrack.Value;
+                memLabel.Text = v + " MB";
+                Settings.MemoryMB = v;
             };
+            memTrack.Value = Math.Max(512, Math.Min(8192, Settings.MemoryMB));
             launchPage.Controls.Add(memTrack); launchPage.Controls.Add(memLabel);
 
             // 启动按钮
@@ -2577,9 +2700,8 @@ namespace MouseLauncher
             };
             verList.DoubleClick += delegate { if (verList.SelectedItems.Count > 0) StartDownload(); };
 
-            bar = new ProgressBar();
-            bar.SetBounds(20, 448, 500, 22);
-            bar.ForeColor = Theme.Accent;
+            bar = new RoundProgress();
+            bar.SetBounds(20, 450, 500, 16);
             statusLab = new Label();
             statusLab.Text = manifest == null ? "提示: 点击右上角「刷新清单」获取版本列表" : "";
             statusLab.ForeColor = Theme.TextDim;
@@ -2681,6 +2803,7 @@ namespace MouseLauncher
                 if (verList.Items.Count >= 200) break;
             }
             foreach (ColumnHeader ch in verList.Columns) ch.Width = ch.Width == 60 ? -2 : ch.Width;
+            PadEnd(verList);
         }
 
         void InstallFabricClick()
@@ -2845,13 +2968,13 @@ namespace MouseLauncher
             modVerList.Columns.Add("加载器", 90);
             modVerList.SelectedIndexChanged += delegate { modInstallBtn.Enabled = modVerList.SelectedItems.Count > 0; };
 
-            modBar = new ProgressBar();
-            modBar.SetBounds(20, 448, 400, 22);
+            modBar = new RoundProgress();
+            modBar.SetBounds(20, 450, 400, 16);
             modStatusLab = new Label();
             modStatusLab.Text = "来自 Modrinth · 搜索后选择工程, 再选择文件版本";
             modStatusLab.ForeColor = Theme.TextDim;
             modStatusLab.SetBounds(20, 474, 560, 20);
-            modStatusLab.BackColor = Color.Transparent;
+            modStatusLab.BackColor = Theme.Bg;
 
             modInstallBtn = new RButton();
             modInstallBtn.Text = "⬇  安装";
