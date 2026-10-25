@@ -296,6 +296,7 @@ namespace MouseLauncher
         public static string McDir = "D:\\pcl2\\.minecraft";
         public static string PlayerName = "naixi";
         public static int MemoryMB = 2048;
+        public static string WinPos = "";
         public static bool AutoBackup = true;
         static string Path0()
         {
@@ -314,6 +315,7 @@ namespace MouseLauncher
                     else if (k == "MemoryMB") { int t; if (int.TryParse(v, out t)) MemoryMB = t; }
                     else if (k == "McDir") McDir = v;
                     else if (k == "AutoBackup") AutoBackup = v == "1" || v.ToLowerInvariant() == "true";
+                    else if (k == "WinPos") WinPos = v;
                 }
             }
             catch { }
@@ -324,7 +326,7 @@ namespace MouseLauncher
             {
                 File.WriteAllLines(Path0(), new string[] {
                     "Name=" + PlayerName, "MemoryMB=" + MemoryMB, "McDir=" + McDir,
-                    "AutoBackup=" + (AutoBackup ? "1" : "0")
+                    "AutoBackup=" + (AutoBackup ? "1" : "0"), "WinPos=" + WinPos
                 }, Encoding.UTF8);
             }
             catch { }
@@ -2082,7 +2084,7 @@ namespace MouseLauncher
         ComboBox versionBox, javaBox;
         TextBox nameBox, logBox;
         TrackBar memTrack;
-        Label memLabel;
+        Label memLabel, gameStatLab, javaNeedLab;
         RButton launchBtn, refreshBtn, deleteBtn, javaBrowseBtn;
         // 下载页
         TextBox searchBox;
@@ -2144,18 +2146,63 @@ namespace MouseLauncher
             pageHost.BackColor = Theme.Bg;
             Controls.Add(pageHost);
 
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "tc-start\n"); } catch { }
             BuildLaunchPage();
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-launch\n"); } catch { }
             BuildDownloadPage();
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-dl\n"); } catch { }
             BuildModPage();
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-mod\n"); } catch { }
             BuildSettingsPage();
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-set\n"); } catch { }
             BuildMpPage();
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t-mp\n"); } catch { }
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t1-before-darkcombo\n"); } catch { }
+            DarkCombo(javaBox); DarkCombo(versionBox); DarkCombo(filterBox); DarkCombo(fabricBox);
+            DarkCombo(modTypeBox); DarkCombo(targetVerBox);
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t2-after-darkcombo\n"); } catch { }
             StartLanWatcher();
 
+            // 恢复上次窗口位置 (仅当落点在某个屏幕工作区内)
+            try
+            {
+                string[] xy = (Settings.WinPos ?? "").Split(',');
+                int sx, sy;
+                if (xy.Length == 2 && int.TryParse(xy[0], out sx) && int.TryParse(xy[1], out sy))
+                {
+                    bool onScreen = false;
+                    foreach (System.Windows.Forms.Screen sc in System.Windows.Forms.Screen.AllScreens)
+                        if (sc.WorkingArea.Contains(sx, sy)) onScreen = true;
+                    if (onScreen) { StartPosition = FormStartPosition.Manual; Location = new Point(sx, sy); }
+                }
+            }
+            catch { }
+
             ShowPage(navLaunch);
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t3-after-showpage\n"); } catch { }
             ScanJava();
             ScanVersions();
+            try { System.IO.File.AppendAllText("D:\\boot-trace.txt", "t4-after-scan\n"); } catch { }
             Log("老鼠启动器 v1.1 就绪 by osaka  游戏目录: " + Settings.McDir);
-            FormClosed += delegate { Settings.Save(); };
+            FormClosed += delegate { Settings.WinPos = Left + "," + Top; Settings.Save(); };
+        }
+
+        // ComboBox 下拉列表深色化 (Flat 模式下弹出列表仍是系统白底)
+        void DarkCombo(ComboBox cb)
+        {
+            cb.DrawMode = DrawMode.OwnerDrawFixed;
+            cb.ItemHeight = 20;
+            cb.DrawItem += delegate(object s, DrawItemEventArgs e)
+            {
+                e.DrawBackground();
+                bool sel = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+                using (SolidBrush b = new SolidBrush(sel ? Color.FromArgb(60, 74, 96) : Theme.Card)) e.Graphics.FillRectangle(b, e.Bounds);
+                ComboBox box = (ComboBox)s;
+                string t = e.Index >= 0 && box.Items.Count > e.Index ? (box.Items[e.Index] as string ?? "") : "";
+                TextRenderer.DrawText(e.Graphics, t, new Font("Microsoft YaHei UI", 9F),
+                    new Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 8, e.Bounds.Height),
+                    Theme.Text, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+            };
         }
 
         // ----- 窗口框架 -----
@@ -2377,6 +2424,14 @@ namespace MouseLauncher
             };
             launchPage.Controls.Add(javaBox); launchPage.Controls.Add(javaBrowseBtn);
 
+            // 该版本对应的 Java 需求提示
+            javaNeedLab = new Label();
+            javaNeedLab.ForeColor = Theme.TextDim; javaNeedLab.BackColor = Theme.Card;
+            javaNeedLab.SetBounds(742, 24, 158, 20);
+            javaNeedLab.TextAlign = ContentAlignment.MiddleRight;
+            javaNeedLab.Font = new Font("Microsoft YaHei UI", 8.5F);
+            launchPage.Controls.Add(javaNeedLab);
+
             // 版本卡
             Card(launchPage, "游戏版本 (与 PCL 共用)", 20, 122, 620, 96);
             versionBox = new ComboBox();
@@ -2384,6 +2439,7 @@ namespace MouseLauncher
             versionBox.DropDownStyle = ComboBoxStyle.DropDownList;
             versionBox.FlatStyle = FlatStyle.Flat;
             versionBox.BackColor = Theme.CardLight; versionBox.ForeColor = Theme.Text;
+            versionBox.SelectedIndexChanged += delegate { UpdateJavaHint(); };
             refreshBtn = new RButton();
             refreshBtn.Text = "↻ 刷新";
             refreshBtn.Fill = Color.FromArgb(70, 70, 84);
@@ -2434,6 +2490,13 @@ namespace MouseLauncher
             logTitle.Text = "运行日志";
             logTitle.ForeColor = Theme.TextDim;
             logTitle.SetBounds(22, 292, 120, 20);
+            gameStatLab = new Label();
+            gameStatLab.Text = "○ 未在运行";
+            gameStatLab.ForeColor = Theme.TextDim;
+            gameStatLab.BackColor = Theme.Bg;
+            gameStatLab.SetBounds(676, 292, 240, 20);
+            gameStatLab.TextAlign = ContentAlignment.MiddleRight;
+            launchPage.Controls.Add(gameStatLab);
             logBox = new TextBox();
             logBox.Multiline = true; logBox.ReadOnly = true; logBox.ScrollBars = ScrollBars.Vertical;
             logBox.BackColor = Theme.Console; logBox.ForeColor = Color.FromArgb(210, 230, 210);
@@ -2512,6 +2575,7 @@ namespace MouseLauncher
             {
                 if (verList.SelectedItems.Count > 0) statusLab.Text = "已选择: " + verList.SelectedItems[0].Text;
             };
+            verList.DoubleClick += delegate { if (verList.SelectedItems.Count > 0) StartDownload(); };
 
             bar = new ProgressBar();
             bar.SetBounds(20, 448, 500, 22);
@@ -3249,6 +3313,22 @@ namespace MouseLauncher
         // ----- 业务 -----
         void Log(string msg) { Util.Log(logBox, msg); }
 
+        // 选中版本对应的 Java 需求与就绪状态
+        void UpdateJavaHint()
+        {
+            try
+            {
+                if (versionBox.SelectedItem == null) { javaNeedLab.Text = ""; return; }
+                string vid = (string)versionBox.SelectedItem;
+                string comp; int major;
+                JavaRuntime.Requirement(Path.Combine(Settings.McDir, "versions", vid, vid + ".json"), out comp, out major);
+                bool ready = File.Exists(Path.Combine(JavaRuntime.RuntimeRoot(), comp, "bin", "javaw.exe"));
+                javaNeedLab.Text = ready ? "此版本需 Java " + major + " ✓ 已就绪" : "此版本需 Java " + major + " · 将自动下载";
+                javaNeedLab.ForeColor = ready ? Theme.Green : Theme.Accent;
+            }
+            catch { javaNeedLab.Text = ""; }
+        }
+
         void ScanJava()
         {
             javaBox.Items.Clear();
@@ -3399,11 +3479,24 @@ namespace MouseLauncher
                         BeginInvoke((MethodInvoker)delegate
                         {
                             launchBtn.Enabled = true;
+                            launchBtn.Text = "⛏ 游戏运行中...";
+                            gameStatLab.Text = "● 游戏运行中";
+                            gameStatLab.ForeColor = Theme.Green;
                             WindowState = FormWindowState.Minimized;
                         });
                     }
                     catch { }
                     gp.WaitForExit();
+                    try
+                    {
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            launchBtn.Text = "▶  启 动 游 戏";
+                            gameStatLab.Text = "○ 未在运行";
+                            gameStatLab.ForeColor = Theme.TextDim;
+                        });
+                    }
+                    catch { }
                     if (gp.ExitCode != 0)
                     {
                         Log("游戏异常退出 (代码 " + gp.ExitCode + ")");
