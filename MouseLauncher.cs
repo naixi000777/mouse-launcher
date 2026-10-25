@@ -2481,11 +2481,12 @@ namespace MouseLauncher
             BuildSettingsPage();
             BuildMpPage();
             DarkCombo(javaBox); DarkCombo(versionBox); DarkCombo(filterBox); DarkCombo(fabricBox);
-            DarkCombo(modTypeBox); DarkCombo(targetVerBox); DarkCombo(dirPresetBox);
+            DarkCombo(modTypeBox); DarkCombo(targetVerBox); DarkCombo(dirPresetBox); DarkCombo(forgeBox);
             DarkList(verList); DarkList(modResultList); DarkList(modVerList);
-            // 原生控件暗色主题: 滚动条/勾选框等变深色 (Win10 1809+)
+            // 原生控件暗色主题: 滚动条/勾选框/下拉箭头按钮等变深色 (Win10 1809+)
             foreach (Control c in new Control[] { logBox, nameBox, dirBox, searchBox, modSearchBox, mpPortBox, mpCodeOut, mpCodeIn,
-                verList, modResultList, modVerList, backupChk })
+                verList, modResultList, modVerList, backupChk,
+                javaBox, versionBox, filterBox, fabricBox, forgeBox, modTypeBox, targetVerBox, dirPresetBox })
                 DarkChrome(c);
             // 透明链: 页面与容器透明, 极光从窗体透出 (玻璃卡才生效)
             pageHost.BackColor = Color.Transparent;
@@ -2546,14 +2547,13 @@ namespace MouseLauncher
             }
         }
 
-        // ComboBox 下拉列表深色化 (Flat 模式下弹出列表仍是系统白底)
+        // ComboBox 下拉深色化: 去掉系统白底先行绘制; 闭合态与列表项统一自绘; 箭头按钮由 DarkChrome 暗色主题处理
         void DarkCombo(ComboBox cb)
         {
             cb.DrawMode = DrawMode.OwnerDrawFixed;
             cb.ItemHeight = 20;
             cb.DrawItem += delegate(object s, DrawItemEventArgs e)
             {
-                e.DrawBackground();
                 bool sel = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
                 using (SolidBrush b = new SolidBrush(sel ? Color.FromArgb(60, 74, 96) : Theme.Card)) e.Graphics.FillRectangle(b, e.Bounds);
                 ComboBox box = (ComboBox)s;
@@ -2644,14 +2644,14 @@ namespace MouseLauncher
             titleBar.Controls.Add(titleLabel);
 
             TitleButton minBtn = new TitleButton("—");
-            minBtn.SetBounds(Width - 84, 0, 40, 46);
+            minBtn.SetBounds(Width - 96, 0, 40, 46);
             minBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             minBtn.Click += delegate { WindowState = FormWindowState.Minimized; };
             titleBar.Controls.Add(minBtn);
 
             TitleButton closeBtn = new TitleButton("✕");
             closeBtn.RedHover = true;
-            closeBtn.SetBounds(Width - 44, 0, 44, 46);
+            closeBtn.SetBounds(Width - 58, 0, 44, 46);
             closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             closeBtn.Click += delegate { Close(); };
             titleBar.Controls.Add(closeBtn);
