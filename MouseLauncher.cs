@@ -2267,7 +2267,7 @@ namespace MouseLauncher
             BuildSettingsPage();
             BuildMpPage();
             DarkCombo(javaBox); DarkCombo(versionBox); DarkCombo(filterBox); DarkCombo(fabricBox);
-            DarkCombo(modTypeBox); DarkCombo(targetVerBox);
+            DarkCombo(modTypeBox); DarkCombo(targetVerBox); DarkCombo(dirPresetBox);
             DarkList(verList); DarkList(modResultList); DarkList(modVerList);
             // 透明链: 页面与容器透明, 极光从窗体透出 (玻璃卡才生效)
             pageHost.BackColor = Color.Transparent;
@@ -3423,36 +3423,61 @@ namespace MouseLauncher
             settingsPage.Visible = false;
             pageHost.Controls.Add(settingsPage);
 
-            Panel cardDir = Card(settingsPage, "游戏目录 (.minecraft)", 20, 14, 896, 130);
+            Panel cardDir = Card(settingsPage, "游戏目录 (.minecraft)", 20, 14, 896, 138);
             dirBox = new TextBox();
-            dirBox.SetBounds(16, 30, 660, 26);
+            dirBox.SetBounds(16, 30, 560, 26);
             dirBox.Text = Settings.McDir;
             dirBox.ReadOnly = true;
             dirBox.BackColor = Theme.CardLight; dirBox.ForeColor = Theme.Text; dirBox.BorderStyle = BorderStyle.FixedSingle;
+            dirCountLab = new Label();
+            dirCountLab.ForeColor = Theme.Green; dirCountLab.BackColor = Color.Transparent;
+            dirCountLab.SetBounds(586, 34, 100, 20);
+            dirCountLab.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
+            cardDir.Controls.Add(dirCountLab);
             dirBrowseBtn = new RButton();
             dirBrowseBtn.Text = "更改...";
             dirBrowseBtn.Fill = Color.FromArgb(70, 70, 84);
             dirBrowseBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            dirBrowseBtn.SetBounds(686, 29, 90, 30);
-            dirBrowseBtn.Click += delegate
-            {
-                using (FolderBrowserDialog d = new FolderBrowserDialog())
-                {
-                    d.Description = "选择 .minecraft 目录";
-                    if (d.ShowDialog(this) == DialogResult.OK)
-                    {
-                        Settings.McDir = d.SelectedPath;
-                        dirBox.Text = d.SelectedPath;
-                        ScanVersions();
-                    }
-                }
-            };
+            dirBrowseBtn.SetBounds(694, 29, 80, 30);
+            dirBrowseBtn.Click += delegate { PickMcDir(); };
             openDirBtn = new RButton();
             openDirBtn.Text = "打开文件夹";
             openDirBtn.Fill = Color.FromArgb(70, 70, 84);
             openDirBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            openDirBtn.SetBounds(786, 29, 96, 30);
+            openDirBtn.SetBounds(782, 29, 96, 30);
             openDirBtn.Click += delegate { try { Process.Start(Settings.McDir); } catch { } };
+            cardDir.Controls.Add(dirBrowseBtn); cardDir.Controls.Add(openDirBtn);
+
+            // 快速选择常见游戏目录 + 自动备份开关
+            Label presetLab = new Label(); presetLab.Text = "快速选择:"; presetLab.ForeColor = Theme.TextDim;
+            presetLab.BackColor = Color.Transparent; presetLab.SetBounds(16, 72, 66, 20);
+            cardDir.Controls.Add(presetLab);
+            dirPresetBox = new ComboBox();
+            dirPresetBox.SetBounds(86, 68, 250, 26);
+            dirPresetBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            dirPresetBox.FlatStyle = FlatStyle.Flat;
+            dirPresetBox.BackColor = Theme.CardLight; dirPresetBox.ForeColor = Theme.Text;
+            dirPresetBox.SelectedIndexChanged += delegate
+            {
+                int i = dirPresetBox.SelectedIndex;
+                if (i < 0 || i >= presetPaths.Count) return;
+                string p = presetPaths[i];
+                if (p == "__browse__") PickMcDir();
+                else if (p != Settings.McDir) ApplyMcDir(p);
+            };
+            cardDir.Controls.Add(dirPresetBox);
+            FillDirPresets();
+
+            CheckBox backupChk = new CheckBox();
+            backupChk.Text = "启动游戏前自动备份存档 (保留最近 5 份, 存到 backups\\)";
+            backupChk.ForeColor = Theme.Text;
+            backupChk.BackColor = Color.Transparent;
+            backupChk.AutoSize = false;
+            backupChk.SetBounds(354, 70, 480, 26);
+            backupChk.Checked = Settings.AutoBackup;
+            backupChk.CheckedChanged += delegate { Settings.AutoBackup = backupChk.Checked; Settings.Save(); };
+            cardDir.Controls.Add(backupChk);
+
             // 快捷打开子目录
             string[][] quickDirs = new string[][] {
                 new string[] { "🗺 存档", "saves" }, new string[] { "🧩 mods", "mods" },
@@ -3464,7 +3489,7 @@ namespace MouseLauncher
                 qb.Text = quickDirs[i][0];
                 qb.Fill = Color.FromArgb(70, 70, 84);
                 qb.Font = new Font("Microsoft YaHei UI", 8.5F);
-                qb.SetBounds(16 + i * 96, 68, 88, 26);
+                qb.SetBounds(16 + i * 96, 102, 88, 26);
                 qb.Click += delegate
                 {
                     string d = Path.Combine(Settings.McDir, sub);
@@ -3474,18 +3499,10 @@ namespace MouseLauncher
                 };
                 cardDir.Controls.Add(qb);
             }
-            CheckBox backupChk = new CheckBox();
-            backupChk.Text = "启动游戏前自动备份存档 (保留最近 5 份, 存到 backups\\)";
-            backupChk.ForeColor = Theme.Text;
-            backupChk.BackColor = Color.Transparent;
-            backupChk.AutoSize = false;
-            backupChk.SetBounds(504, 68, 380, 26);
-            backupChk.Checked = Settings.AutoBackup;
-            backupChk.CheckedChanged += delegate { Settings.AutoBackup = backupChk.Checked; Settings.Save(); };
-            cardDir.Controls.Add(dirBox); cardDir.Controls.Add(dirBrowseBtn); cardDir.Controls.Add(openDirBtn);
-            cardDir.Controls.Add(backupChk);
+            cardDir.Controls.Add(dirBox);
+            UpdateDirCount();
 
-            Panel cardAbout = Card(settingsPage, "关于", 20, 156, 896, 120);
+            Panel cardAbout = Card(settingsPage, "关于", 20, 164, 896, 120);
             if (LogoImg != null)
             {
                 PictureBox aboutLogo = new PictureBox();
@@ -3505,6 +3522,72 @@ namespace MouseLauncher
             about.SetBounds(76, 32, 800, 80);
             cardAbout.Controls.Add(about);
             SinkCards();
+        }
+
+        // ----- 游戏目录管理 -----
+        ComboBox dirPresetBox;
+        Label dirCountLab;
+        List<string> presetPaths = new List<string>();
+
+        void ApplyMcDir(string dir)
+        {
+            Settings.McDir = dir;
+            Settings.Save();
+            dirBox.Text = dir;
+            UpdateDirCount();
+            ScanVersions();
+            Log("游戏目录已切换: " + dir);
+        }
+
+        void PickMcDir()
+        {
+            using (FolderBrowserDialog d = new FolderBrowserDialog())
+            {
+                d.Description = "选择 .minecraft 目录 (需包含 versions 子目录)";
+                if (d.ShowDialog(this) == DialogResult.OK) ApplyMcDir(d.SelectedPath);
+            }
+        }
+
+        // 常见位置一键切换: 只列实际存在的; 另有浏览自定义项
+        void FillDirPresets()
+        {
+            dirPresetBox.Items.Clear();
+            presetPaths.Clear();
+            string roaming = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string[][] presets = new string[][] {
+                new string[] { "官方默认 (AppData)", Path.Combine(roaming, ".minecraft") },
+                new string[] { "启动器同目录", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".minecraft") },
+                new string[] { "PCL (D 盘)", "D:\\pcl2\\.minecraft" },
+                new string[] { "PCL (C 盘)", "C:\\pcl2\\.minecraft" }
+            };
+            foreach (string[] p in presets)
+            {
+                if (Directory.Exists(p[1]))
+                {
+                    dirPresetBox.Items.Add(p[0]);
+                    presetPaths.Add(p[1]);
+                }
+            }
+            dirPresetBox.Items.Add("浏览其他目录...");
+            presetPaths.Add("__browse__");
+            int cur = presetPaths.IndexOf(Settings.McDir);
+            if (cur >= 0) dirPresetBox.SelectedIndex = cur;
+        }
+
+        void UpdateDirCount()
+        {
+            try
+            {
+                int n = 0;
+                string vdir = Path.Combine(Settings.McDir, "versions");
+                if (Directory.Exists(vdir))
+                    foreach (string d in Directory.GetDirectories(vdir))
+                        if (File.Exists(Path.Combine(d, Path.GetFileName(d) + ".json"))) n++;
+                if (n > 0) { dirCountLab.Text = "✓ " + n + " 个版本"; dirCountLab.ForeColor = Theme.Green; }
+                else { dirCountLab.Text = "无版本"; dirCountLab.ForeColor = Color.FromArgb(230, 130, 90); }
+                FillDirPresets();
+            }
+            catch { }
         }
 
         // ----- 业务 -----
