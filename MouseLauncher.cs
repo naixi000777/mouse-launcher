@@ -2665,24 +2665,20 @@ namespace MouseLauncher
             launchBtn.Click += delegate { DoLaunch(); };
             launchPage.Controls.Add(launchBtn);
 
-            // 日志
-            Label logTitle = new Label();
-            logTitle.Text = "运行日志";
-            logTitle.ForeColor = Theme.TextDim;
-            logTitle.SetBounds(22, 292, 120, 20);
-            logTitle.BackColor = Color.Transparent;
+            // 日志卡
+            Panel cardL = Card(launchPage, "运行日志", 20, 284, 896, 288);
             gameStatLab = new Label();
             gameStatLab.Text = "○ 未运行";
             gameStatLab.ForeColor = Theme.TextDim;
             gameStatLab.BackColor = Color.Transparent;
-            gameStatLab.SetBounds(816, 292, 100, 20);
+            gameStatLab.SetBounds(770, 9, 110, 20);
             gameStatLab.TextAlign = ContentAlignment.MiddleRight;
-            launchPage.Controls.Add(gameStatLab);
+            cardL.Controls.Add(gameStatLab);
             killGameBtn = new RButton();
             killGameBtn.Text = "⛔ 结束游戏";
             killGameBtn.Fill = Color.FromArgb(150, 70, 70);
             killGameBtn.Font = new Font("Microsoft YaHei UI", 8.5F);
-            killGameBtn.SetBounds(700, 288, 108, 26);
+            killGameBtn.SetBounds(652, 7, 110, 24);
             killGameBtn.Visible = false;
             killGameBtn.Click += delegate
             {
@@ -2692,14 +2688,13 @@ namespace MouseLauncher
                 }
                 catch { }
             };
-            launchPage.Controls.Add(killGameBtn);
+            cardL.Controls.Add(killGameBtn);
             logBox = new TextBox();
             logBox.Multiline = true; logBox.ReadOnly = true; logBox.ScrollBars = ScrollBars.Vertical;
             logBox.BackColor = Theme.Console; logBox.ForeColor = Color.FromArgb(210, 230, 210);
             logBox.Font = new Font("Consolas", 9F);
-            logBox.SetBounds(20, 314, 896, 250);
-            launchPage.Controls.Add(logTitle);
-            launchPage.Controls.Add(logBox);
+            logBox.SetBounds(10, 36, 876, 240);
+            cardL.Controls.Add(logBox);
             SinkCards();
         }
 
@@ -2713,16 +2708,18 @@ namespace MouseLauncher
             downloadPage.Visible = false;
             pageHost.Controls.Add(downloadPage);
 
+            Panel cardD = Card(downloadPage, "下载原版", 20, 14, 894, 548);
+
             searchBox = new TextBox();
-            searchBox.SetBounds(20, 18, 240, 28);
+            searchBox.SetBounds(16, 38, 240, 28);
             searchBox.BackColor = Theme.Card; searchBox.ForeColor = Theme.Text; searchBox.BorderStyle = BorderStyle.FixedSingle;
-            Label ph = new Label(); ph.Text = "🔍 搜索版本号..."; ph.ForeColor = Theme.TextDim; ph.SetBounds(26, 22, 130, 20); ph.BackColor = Color.Transparent;
+            Label ph = new Label(); ph.Text = "🔍 搜索版本号..."; ph.ForeColor = Theme.TextDim; ph.SetBounds(6, 4, 130, 20); ph.BackColor = Color.Transparent;
             searchBox.Controls.Add(ph);
             searchBox.TextChanged += delegate { ph.Visible = string.IsNullOrEmpty(searchBox.Text); FillVerList(); };
             searchBox.GotFocus += delegate { ph.Visible = string.IsNullOrEmpty(searchBox.Text); };
 
             filterBox = new ComboBox();
-            filterBox.SetBounds(270, 18, 130, 28);
+            filterBox.SetBounds(266, 38, 130, 28);
             filterBox.DropDownStyle = ComboBoxStyle.DropDownList;
             filterBox.FlatStyle = FlatStyle.Flat;
             filterBox.BackColor = Theme.Card; filterBox.ForeColor = Theme.Text;
@@ -2734,13 +2731,13 @@ namespace MouseLauncher
             manifestBtn.Text = "↻ 刷新清单";
             manifestBtn.Fill = Color.FromArgb(70, 70, 84);
             manifestBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            manifestBtn.SetBounds(410, 17, 100, 30);
+            manifestBtn.SetBounds(406, 37, 100, 30);
             manifestBtn.Click += delegate { LoadManifest(true); };
 
             Label fLab = new Label(); fLab.Text = "Fabric:"; fLab.ForeColor = Theme.TextDim;
-            fLab.BackColor = Color.Transparent; fLab.SetBounds(524, 23, 46, 20);
+            fLab.BackColor = Color.Transparent; fLab.SetBounds(520, 43, 46, 20);
             fabricBox = new ComboBox();
-            fabricBox.SetBounds(572, 18, 110, 28);
+            fabricBox.SetBounds(568, 38, 110, 28);
             fabricBox.DropDownStyle = ComboBoxStyle.DropDownList;
             fabricBox.FlatStyle = FlatStyle.Flat;
             fabricBox.BackColor = Theme.Card; fabricBox.ForeColor = Theme.Text;
@@ -2750,16 +2747,11 @@ namespace MouseLauncher
             fabricBtn.Text = "🧵 装Fabric";
             fabricBtn.Fill = Color.FromArgb(70, 70, 84);
             fabricBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            fabricBtn.SetBounds(688, 17, 104, 30);
+            fabricBtn.SetBounds(684, 37, 104, 30);
             fabricBtn.Click += delegate { InstallFabricClick(); };
-            Label tip = new Label();
-            tip.Text = "Fabric 装到列表选中的版本上";
-            tip.ForeColor = Theme.TextDim;
-            tip.BackColor = Color.Transparent;
-            tip.SetBounds(800, 23, 116, 20);
 
             verList = new ListView();
-            verList.SetBounds(20, 56, 896, 380);
+            verList.SetBounds(16, 76, 862, 384);
             verList.View = View.Details; verList.FullRowSelect = true; verList.HideSelection = false;
             verList.BorderStyle = BorderStyle.None;
             verList.BackColor = Theme.Card; verList.ForeColor = Theme.Text;
@@ -2774,17 +2766,18 @@ namespace MouseLauncher
             verList.DoubleClick += delegate { if (verList.SelectedItems.Count > 0) StartDownload(); };
 
             bar = new RoundProgress();
-            bar.SetBounds(20, 450, 500, 16);
+            bar.SetBounds(16, 476, 500, 16);
             statusLab = new Label();
-            statusLab.Text = manifest == null ? "提示: 点击右上角「刷新清单」获取版本列表" : "";
+            statusLab.Text = manifest == null ? "提示: 点击「刷新清单」获取版本列表" : "";
             statusLab.ForeColor = Theme.TextDim;
-            statusLab.SetBounds(20, 474, 500, 20);
+            statusLab.BackColor = Color.Transparent;
+            statusLab.SetBounds(16, 500, 500, 20);
 
             dlBtn = new RButton();
             dlBtn.Text = "⬇  下载选中版本";
             dlBtn.Fill = Theme.Accent;
             dlBtn.Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold);
-            dlBtn.SetBounds(720, 438, 196, 46);
+            dlBtn.SetBounds(676, 462, 202, 46);
             dlBtn.Click += delegate
             {
                 if (verList.SelectedItems.Count == 0)
@@ -2795,7 +2788,7 @@ namespace MouseLauncher
                 StartDownload();
             };
 
-            downloadPage.Controls.AddRange(new Control[] { searchBox, filterBox, manifestBtn, fLab, fabricBox, fabricBtn, tip, verList, bar, statusLab, dlBtn });
+            cardD.Controls.AddRange(new Control[] { searchBox, filterBox, manifestBtn, fLab, fabricBox, fabricBtn, verList, bar, statusLab, dlBtn });
         }
 
         void LoadManifest() { LoadManifest(false); }
@@ -2989,8 +2982,10 @@ namespace MouseLauncher
             modPage.Visible = false;
             pageHost.Controls.Add(modPage);
 
+            Panel cardM = Card(modPage, "Mod / 整合包 / 资源包 / 光影", 20, 14, 894, 548);
+
             modTypeBox = new ComboBox();
-            modTypeBox.SetBounds(20, 18, 110, 28);
+            modTypeBox.SetBounds(16, 38, 110, 28);
             modTypeBox.DropDownStyle = ComboBoxStyle.DropDownList;
             modTypeBox.FlatStyle = FlatStyle.Flat;
             modTypeBox.BackColor = Theme.Card; modTypeBox.ForeColor = Theme.Text;
@@ -3003,7 +2998,7 @@ namespace MouseLauncher
             };
 
             modSearchBox = new TextBox();
-            modSearchBox.SetBounds(140, 18, 300, 28);
+            modSearchBox.SetBounds(136, 38, 300, 28);
             modSearchBox.BackColor = Theme.Card; modSearchBox.ForeColor = Theme.Text; modSearchBox.BorderStyle = BorderStyle.FixedSingle;
             modSearchBox.KeyDown += delegate(object s, KeyEventArgs e) { if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; ModSearch(); } };
 
@@ -3011,18 +3006,18 @@ namespace MouseLauncher
             modSearchBtn.Text = "🔍 搜索";
             modSearchBtn.Font = new Font("Microsoft YaHei UI", 9F);
             modSearchBtn.Fill = Theme.Accent;
-            modSearchBtn.SetBounds(450, 17, 90, 30);
+            modSearchBtn.SetBounds(446, 37, 90, 30);
             modSearchBtn.Click += delegate { ModSearch(); };
 
-            Label tLab = new Label(); tLab.Text = "安装到:"; tLab.ForeColor = Theme.TextDim; tLab.SetBounds(560, 23, 52, 20); tLab.BackColor = Color.Transparent;
+            Label tLab = new Label(); tLab.Text = "安装到:"; tLab.ForeColor = Theme.TextDim; tLab.SetBounds(546, 43, 52, 20); tLab.BackColor = Color.Transparent;
             targetVerBox = new ComboBox();
-            targetVerBox.SetBounds(614, 18, 300, 28);
+            targetVerBox.SetBounds(600, 38, 278, 28);
             targetVerBox.DropDownStyle = ComboBoxStyle.DropDownList;
             targetVerBox.FlatStyle = FlatStyle.Flat;
             targetVerBox.BackColor = Theme.Card; targetVerBox.ForeColor = Theme.Text;
 
             modResultList = new ListView();
-            modResultList.SetBounds(20, 56, 460, 300);
+            modResultList.SetBounds(16, 76, 460, 384);
             modResultList.View = View.Details; modResultList.FullRowSelect = true; modResultList.HideSelection = false;
             modResultList.BorderStyle = BorderStyle.None;
             modResultList.BackColor = Theme.Card; modResultList.ForeColor = Theme.Text;
@@ -3032,7 +3027,7 @@ namespace MouseLauncher
             modResultList.ItemSelectionChanged += delegate { if (modResultList.SelectedItems.Count > 0) LoadModVersions(); };
 
             modVerList = new ListView();
-            modVerList.SetBounds(494, 56, 420, 300);
+            modVerList.SetBounds(486, 76, 392, 384);
             modVerList.View = View.Details; modVerList.FullRowSelect = true; modVerList.HideSelection = false;
             modVerList.BorderStyle = BorderStyle.None;
             modVerList.BackColor = Theme.Card; modVerList.ForeColor = Theme.Text;
@@ -3042,22 +3037,22 @@ namespace MouseLauncher
             modVerList.SelectedIndexChanged += delegate { modInstallBtn.Enabled = modVerList.SelectedItems.Count > 0; };
 
             modBar = new RoundProgress();
-            modBar.SetBounds(20, 450, 400, 16);
+            modBar.SetBounds(16, 476, 400, 16);
             modStatusLab = new Label();
             modStatusLab.Text = "来自 Modrinth · 搜索后选择工程, 再选择文件版本";
             modStatusLab.ForeColor = Theme.TextDim;
-            modStatusLab.SetBounds(20, 474, 560, 20);
+            modStatusLab.SetBounds(16, 500, 560, 20);
             modStatusLab.BackColor = Color.Transparent;
 
             modInstallBtn = new RButton();
             modInstallBtn.Text = "⬇  安装";
             modInstallBtn.Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold);
             modInstallBtn.Fill = Theme.Accent;
-            modInstallBtn.SetBounds(740, 440, 176, 44);
+            modInstallBtn.SetBounds(676, 462, 202, 46);
             modInstallBtn.Enabled = false;
             modInstallBtn.Click += delegate { InstallSelected(); };
 
-            modPage.Controls.AddRange(new Control[] { modTypeBox, modSearchBox, modSearchBtn, tLab, targetVerBox,
+            cardM.Controls.AddRange(new Control[] { modTypeBox, modSearchBox, modSearchBtn, tLab, targetVerBox,
                 modResultList, modVerList, modBar, modStatusLab, modInstallBtn });
         }
 
