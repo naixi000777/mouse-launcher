@@ -2627,7 +2627,7 @@ namespace MouseLauncher
             ShowPage(navLaunch);
             ScanJava();
             ScanVersions();
-            Log("老鼠启动器 v1.1 就绪  游戏目录: " + Settings.McDir);
+            Log("老鼠启动器 v1.1.1 就绪  游戏目录: " + Settings.McDir);
             FormClosed += delegate { Settings.WinPos = Left + "," + Top; Settings.Save(); };
         }
 
@@ -2801,7 +2801,7 @@ namespace MouseLauncher
             sidebar.Controls.Add(navMp);
 
             Label ver = new Label();
-            ver.Text = "v1.1";
+            ver.Text = "v1.1.1";
             ver.ForeColor = Theme.TextDim;
             ver.Font = new Font("Microsoft YaHei UI", 8.5F);
             ver.AutoSize = false;
@@ -3950,7 +3950,7 @@ namespace MouseLauncher
                 cardAbout.Controls.Add(aboutLogo);
             }
             Label about = new Label();
-            about.Text = "老鼠启动器 v1.1  by Naixi\n" +
+            about.Text = "老鼠启动器 v1.1.1  by Naixi\n" +
                 "原版下载 + Fabric + Mod/整合包 + P2P 联机 + 自动装 Java + 存档备份, 深色主题。\n" +
                 "与 PCL2 共用同一个 .minecraft 目录, 双方互相可见对方安装的版本。\n" +
                 "数据源: Mojang 官方 (launchermeta / resources.download), 失败自动切换 BMCLAPI 镜像。";
