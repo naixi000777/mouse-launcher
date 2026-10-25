@@ -2877,7 +2877,7 @@ namespace MouseLauncher
             {
                 PictureBox avatar = new PictureBox();
                 avatar.Image = LogoImg;
-                avatar.SetBounds(14, 26, 52, 52);
+                avatar.SetBounds(14, 38, 48, 48); // 与右侧 Java 下拉框同一条基线, 且不压「玩家」标题
                 avatar.SizeMode = PictureBoxSizeMode.Zoom;
                 avatar.BackColor = Color.Transparent;
                 cardP.Controls.Add(avatar);
