@@ -2237,6 +2237,37 @@ namespace MouseLauncher
         protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
     }
 
+    // ---------- UI: 标题栏按钮 (透明底, 悬停微亮/关闭悬停红) ----------
+    class TitleButton : Control
+    {
+        bool hover, down;
+        public Color HoverFill = Color.FromArgb(45, 255, 255, 255);
+        public bool RedHover;
+        public TitleButton(string text)
+        {
+            Text = text;
+            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
+            BackColor = Color.Transparent;
+            Font = new Font("Segoe UI Symbol", 10F);
+            ForeColor = Color.FromArgb(200, 235, 235, 240);
+            Cursor = Cursors.Hand;
+        }
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            if (hover)
+            {
+                Color f = RedHover ? Color.FromArgb(200, 200, 60, 60) : (down ? ControlPaint.Light(HoverFill, 0.1f) : HoverFill);
+                using (SolidBrush b = new SolidBrush(f)) e.Graphics.FillRectangle(b, ClientRectangle);
+            }
+            TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
+        protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { hover = false; down = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseDown(MouseEventArgs e) { down = true; Invalidate(); base.OnMouseDown(e); }
+        protected override void OnMouseUp(MouseEventArgs e) { down = false; Invalidate(); base.OnMouseUp(e); }
+    }
+
     // ---------- UI: 深色滑块 (替代原生 TrackBar) ----------
     class MouseSlider : Control
     {
@@ -2399,12 +2430,13 @@ namespace MouseLauncher
         // 设置页
         TextBox dirBox;
         RButton dirBrowseBtn, openDirBtn;
+        CheckBox backupChk;
 
         public MainForm()
         {
             Settings.Load();
 
-            Text = "老鼠启动器 by Naixi";
+            Text = "老鼠启动器";
             Width = 1120; Height = 640;
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1120, 640);
@@ -2451,6 +2483,10 @@ namespace MouseLauncher
             DarkCombo(javaBox); DarkCombo(versionBox); DarkCombo(filterBox); DarkCombo(fabricBox);
             DarkCombo(modTypeBox); DarkCombo(targetVerBox); DarkCombo(dirPresetBox);
             DarkList(verList); DarkList(modResultList); DarkList(modVerList);
+            // 原生控件暗色主题: 滚动条/勾选框等变深色 (Win10 1809+)
+            foreach (Control c in new Control[] { logBox, nameBox, dirBox, searchBox, modSearchBox, mpPortBox, mpCodeOut, mpCodeIn,
+                verList, modResultList, modVerList, backupChk })
+                DarkChrome(c);
             // 透明链: 页面与容器透明, 极光从窗体透出 (玻璃卡才生效)
             pageHost.BackColor = Color.Transparent;
             foreach (Panel pg in new Panel[] { launchPage, downloadPage, modPage, settingsPage, mpPage })
@@ -2475,7 +2511,7 @@ namespace MouseLauncher
             ShowPage(navLaunch);
             ScanJava();
             ScanVersions();
-            Log("老鼠启动器 v1.1 就绪 by Naixi  游戏目录: " + Settings.McDir);
+            Log("老鼠启动器 v1.1 就绪  游戏目录: " + Settings.McDir);
             FormClosed += delegate { Settings.WinPos = Left + "," + Top; Settings.Save(); };
         }
 
@@ -2544,6 +2580,19 @@ namespace MouseLauncher
             lv.HandleCreated += delegate { try { lv.BeginInvoke((MethodInvoker)delegate { PadEnd(lv); }); } catch { } };
         }
 
+        // 原生控件暗色主题 (Win10 1809+): 滚动条/勾选框等子元素变深色
+        [System.Runtime.InteropServices.DllImport("uxtheme.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hWnd, string subAppName, string subAppId);
+        void DarkChrome(Control c)
+        {
+            EventHandler apply = delegate
+            {
+                try { if (c.IsHandleCreated) SetWindowTheme(c.Handle, "DarkMode_Explorer", null); } catch { }
+            };
+            c.HandleCreated += apply;
+            if (c.IsHandleCreated) apply(null, EventArgs.Empty);
+        }
+
         // 末列补满/收敛到剩余宽度 (双向: 垂直滚动条出现后 ClientWidth 变小需回缩)
         void PadEnd(ListView lv)
         {
@@ -2565,7 +2614,7 @@ namespace MouseLauncher
             titleBar = new Panel();
             titleBar.Dock = DockStyle.Top;
             titleBar.Height = 46;
-            titleBar.BackColor = Color.FromArgb(215, 26, 26, 36);
+            titleBar.BackColor = Color.FromArgb(180, 28, 28, 40);
             titleBar.MouseMove += TitleMove;
             titleBar.MouseDoubleClick += delegate { ToggleMax(); };
             titleBar.Paint += delegate(object s, PaintEventArgs e)
@@ -2586,7 +2635,7 @@ namespace MouseLauncher
                 titleBar.Controls.Add(logoS);
             }
             titleLabel = new Label();
-            titleLabel.Text = "老鼠启动器 by Naixi";
+            titleLabel.Text = "老鼠启动器";
             titleLabel.Font = new Font("Microsoft YaHei UI", 11.5F, FontStyle.Bold);
             titleLabel.ForeColor = Theme.Text;
             titleLabel.AutoSize = true;
@@ -2594,18 +2643,15 @@ namespace MouseLauncher
             titleLabel.MouseMove += TitleMove;
             titleBar.Controls.Add(titleLabel);
 
-            RButton minBtn = new RButton();
-            minBtn.Text = "—"; minBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            minBtn.Fill = Color.FromArgb(60, 60, 70);
-            minBtn.SetBounds(Width - 92, 9, 38, 28);
+            TitleButton minBtn = new TitleButton("—");
+            minBtn.SetBounds(Width - 84, 0, 40, 46);
             minBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             minBtn.Click += delegate { WindowState = FormWindowState.Minimized; };
             titleBar.Controls.Add(minBtn);
 
-            RButton closeBtn = new RButton();
-            closeBtn.Text = "✕"; closeBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            closeBtn.Fill = Color.FromArgb(200, 72, 72);
-            closeBtn.SetBounds(Width - 48, 9, 38, 28);
+            TitleButton closeBtn = new TitleButton("✕");
+            closeBtn.RedHover = true;
+            closeBtn.SetBounds(Width - 44, 0, 44, 46);
             closeBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             closeBtn.Click += delegate { Close(); };
             titleBar.Controls.Add(closeBtn);
@@ -2633,7 +2679,7 @@ namespace MouseLauncher
             sidebar = new Panel();
             sidebar.Dock = DockStyle.Left;
             sidebar.Width = 168;
-            sidebar.BackColor = Color.FromArgb(205, 26, 26, 36);
+            sidebar.BackColor = Color.FromArgb(180, 28, 28, 40);
             Controls.Add(sidebar);
 
             if (LogoImg != null)
@@ -2665,12 +2711,12 @@ namespace MouseLauncher
             navMod = new NavItem("🧩", "Mod");
             navMod.SetBounds(0, 174, 168, 46);
             navMod.Click += delegate { ShowPage(navMod); FillTargetVersions(); };
-            navSettings = new NavItem("⚙", "设置");
-            navSettings.SetBounds(0, 224, 168, 46);
-            navSettings.Click += delegate { ShowPage(navSettings); };
             navMp = new NavItem("🌐", "联机");
-            navMp.SetBounds(0, 274, 168, 46);
+            navMp.SetBounds(0, 224, 168, 46);
             navMp.Click += delegate { ShowPage(navMp); };
+            navSettings = new NavItem("⚙", "设置");
+            navSettings.SetBounds(0, 274, 168, 46);
+            navSettings.Click += delegate { ShowPage(navSettings); };
             sidebar.Controls.Add(navLaunch);
             sidebar.Controls.Add(navDownload);
             sidebar.Controls.Add(navMod);
@@ -2678,7 +2724,7 @@ namespace MouseLauncher
             sidebar.Controls.Add(navMp);
 
             Label ver = new Label();
-            ver.Text = "老鼠启动器 v1.1 by Naixi";
+            ver.Text = "v1.1";
             ver.ForeColor = Theme.TextDim;
             ver.Font = new Font("Microsoft YaHei UI", 8.5F);
             ver.AutoSize = false;
@@ -3621,7 +3667,7 @@ namespace MouseLauncher
                 "· 双方都用老鼠启动器: 房主「创建房间」, 朋友粘贴邀请码「加入房间」, 然后在 MC 多人游戏里直接连接提示的地址。\n" +
                 "· 若长时间打洞失败: 多为运营商 NAT 限制, 换房主/换网络重建房间再试; Windows 防火弹窗请点允许。\n" +
                 "· 同一个房间邀请码可发给多人, 房主端会显示已连入人数。";
-            note.ForeColor = Theme.TextDim; note.BackColor = Color.Transparent; note.SetBounds(16, 16, 860, 120);
+            note.ForeColor = Theme.TextDim; note.BackColor = Color.Transparent; note.SetBounds(16, 34, 862, 106);
 
             cardH.Controls.Add(h1); cardH.Controls.Add(h2); cardH.Controls.Add(mpPortBox); cardH.Controls.Add(h3);
             cardH.Controls.Add(mpHostBtn); cardH.Controls.Add(mpCodeOut); cardH.Controls.Add(mpCopyBtn); cardH.Controls.Add(mpHostStat);
@@ -3797,7 +3843,7 @@ namespace MouseLauncher
             cardDir.Controls.Add(dirPresetBox);
             FillDirPresets();
 
-            CheckBox backupChk = new CheckBox();
+            backupChk = new CheckBox();
             backupChk.Text = "启动游戏前自动备份存档 (保留最近 5 份, 存到 backups\\)";
             backupChk.ForeColor = Theme.Text;
             backupChk.BackColor = Color.Transparent;
