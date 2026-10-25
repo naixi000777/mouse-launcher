@@ -143,7 +143,7 @@ namespace MouseLauncher
                 ModInstaller mi = new ModInstaller(Settings.McDir, null,
                     delegate(int pct) { Console.Write("\rForge: {0}%   ", pct); },
                     delegate(string s) { Console.WriteLine(s); });
-                string v = mi.InstallForge(args[1]);
+                string v = mi.InstallForge(args[1], args.Length > 2 ? args[2] : null);
                 Console.WriteLine();
                 Console.WriteLine("OK: " + v);
                 Environment.Exit(0);
@@ -2125,12 +2125,17 @@ namespace MouseLauncher
         }
 
         // 安装 Forge: 下载官方 installer 后以 --installClient 运行 (1.13+ 不改动原版 jar, 安全)
-        public string InstallForge(string mcVer)
+        public string InstallForge(string mcVer) { return InstallForge(mcVer, null); }
+        public string InstallForge(string mcVer, string forgeVer)
         {
             SetStatus("获取 Forge 版本列表...");
-            JArray builds = JArray.Parse(Web.GetText("https://bmclapi2.bangbang93.com/forge/minecraft/" + mcVer));
-            if (builds.Count == 0) throw new Exception("清单中没有 " + mcVer + " 的 Forge 版本");
-            string fv = (string)builds[0]["version"];
+            string fv = forgeVer;
+            if (string.IsNullOrEmpty(fv))
+            {
+                JArray builds = JArray.Parse(Web.GetText("https://bmclapi2.bangbang93.com/forge/minecraft/" + mcVer));
+                if (builds.Count == 0) throw new Exception("清单中没有 " + mcVer + " 的 Forge 版本");
+                fv = (string)builds[0]["version"]; // 最新
+            }
             string vName = mcVer + "-forge-" + fv;
             string vJson = Path.Combine(McDir, "versions", vName, vName + ".json");
             if (File.Exists(vJson)) { SetProgress(100); SetStatus("Forge 已安装"); return vName; }
@@ -2369,7 +2374,7 @@ namespace MouseLauncher
         RoundProgress bar;
         Label statusLab;
         RButton dlBtn, manifestBtn;
-        ComboBox fabricBox;
+        ComboBox fabricBox, forgeBox;
         RButton fabricBtn, forgeBtn;
         bool fabricFilled;
         JObject manifest;
@@ -2754,14 +2759,14 @@ namespace MouseLauncher
             // Java 卡
             Panel cardJ = Card(launchPage, "Java 运行时", 454, 14, 462, 96);
             javaBox = new ComboBox();
-            javaBox.SetBounds(16, 26, 340, 26);
+            javaBox.SetBounds(16, 38, 340, 26);
             javaBox.DropDownStyle = ComboBoxStyle.DropDownList;
             javaBox.FlatStyle = FlatStyle.Flat;
             javaBox.BackColor = Theme.CardLight; javaBox.ForeColor = Theme.Text;
             javaBrowseBtn = new RButton();
             javaBrowseBtn.Text = "浏览...";
             javaBrowseBtn.Fill = Color.FromArgb(70, 70, 84);
-            javaBrowseBtn.SetBounds(364, 25, 84, 30);
+            javaBrowseBtn.SetBounds(364, 37, 84, 30);
             javaBrowseBtn.Font = new Font("Microsoft YaHei UI", 9F);
             javaBrowseBtn.Click += delegate
             {
@@ -2900,35 +2905,39 @@ namespace MouseLauncher
             manifestBtn.Text = "↻ 刷新";
             manifestBtn.Fill = Color.FromArgb(70, 70, 84);
             manifestBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            manifestBtn.SetBounds(352, 37, 76, 30);
+            manifestBtn.SetBounds(352, 37, 72, 30);
             manifestBtn.Click += delegate { LoadManifest(true); };
 
             Label fLab = new Label(); fLab.Text = "Fabric:"; fLab.ForeColor = Theme.TextDim;
-            fLab.BackColor = Color.Transparent; fLab.SetBounds(438, 43, 46, 20);
+            fLab.BackColor = Color.Transparent; fLab.SetBounds(430, 43, 44, 20);
             fabricBox = new ComboBox();
-            fabricBox.SetBounds(484, 38, 100, 28);
+            fabricBox.SetBounds(476, 38, 92, 28);
             fabricBox.DropDownStyle = ComboBoxStyle.DropDownList;
             fabricBox.FlatStyle = FlatStyle.Flat;
             fabricBox.BackColor = Theme.Card; fabricBox.ForeColor = Theme.Text;
             fabricBox.Items.Add("最新");
             fabricBox.SelectedIndex = 0;
             fabricBtn = new RButton();
-            fabricBtn.Text = "🧵 装Fabric";
+            fabricBtn.Text = "🧵装";
             fabricBtn.Fill = Color.FromArgb(70, 70, 84);
             fabricBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            fabricBtn.SetBounds(590, 37, 100, 30);
+            fabricBtn.SetBounds(572, 37, 58, 30);
             fabricBtn.Click += delegate { InstallFabricClick(); };
+            Label forgeLab = new Label(); forgeLab.Text = "Forge:"; forgeLab.ForeColor = Theme.TextDim;
+            forgeLab.BackColor = Color.Transparent; forgeLab.SetBounds(638, 43, 40, 20);
+            forgeBox = new ComboBox();
+            forgeBox.SetBounds(680, 38, 96, 28);
+            forgeBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            forgeBox.FlatStyle = FlatStyle.Flat;
+            forgeBox.BackColor = Theme.Card; forgeBox.ForeColor = Theme.Text;
+            forgeBox.Items.Add("最新");
+            forgeBox.SelectedIndex = 0;
             forgeBtn = new RButton();
-            forgeBtn.Text = "⚒ 装Forge";
+            forgeBtn.Text = "⚒装";
             forgeBtn.Fill = Color.FromArgb(70, 70, 84);
             forgeBtn.Font = new Font("Microsoft YaHei UI", 9F);
-            forgeBtn.SetBounds(696, 37, 100, 30);
+            forgeBtn.SetBounds(780, 37, 58, 30);
             forgeBtn.Click += delegate { InstallForgeClick(); };
-            Label tip = new Label();
-            tip.Text = "装到选中的版本";
-            tip.ForeColor = Theme.TextDim;
-            tip.BackColor = Color.Transparent;
-            tip.SetBounds(802, 43, 80, 20);
 
             verList = new ListView();
             verList.SetBounds(16, 76, 862, 384);
@@ -2941,7 +2950,11 @@ namespace MouseLauncher
             verList.Columns.Add("状态", 140);
             verList.SelectedIndexChanged += delegate
             {
-                if (verList.SelectedItems.Count > 0) statusLab.Text = "已选择: " + verList.SelectedItems[0].Text;
+                if (verList.SelectedItems.Count > 0)
+                {
+                    statusLab.Text = "已选择: " + verList.SelectedItems[0].Text;
+                    LoadForgeVersions(verList.SelectedItems[0].Text);
+                }
             };
             verList.DoubleClick += delegate { if (verList.SelectedItems.Count > 0) StartDownload(); };
 
@@ -2968,7 +2981,7 @@ namespace MouseLauncher
                 StartDownload();
             };
 
-            cardD.Controls.AddRange(new Control[] { searchBox, filterBox, manifestBtn, fLab, fabricBox, fabricBtn, forgeBtn, tip, verList, bar, statusLab, dlBtn });
+            cardD.Controls.AddRange(new Control[] { searchBox, filterBox, manifestBtn, fLab, fabricBox, fabricBtn, forgeLab, forgeBox, forgeBtn, verList, bar, statusLab, dlBtn });
         }
 
         void InstallForgeClick()
@@ -2979,8 +2992,9 @@ namespace MouseLauncher
                 return;
             }
             string mcVer = verList.SelectedItems[0].Text;
+            string fv = forgeBox.SelectedIndex <= 0 ? null : (string)forgeBox.SelectedItem;
             forgeBtn.Enabled = false; dlBtn.Enabled = false; fabricBtn.Enabled = false; manifestBtn.Enabled = false; verList.Enabled = false;
-            Log("为 " + mcVer + " 安装 Forge...");
+            Log("为 " + mcVer + " 安装 Forge" + (fv != null ? " " + fv : "") + "...");
             statusLab.Text = "安装 Forge...";
             ModInstaller mi = new ModInstaller(Settings.McDir, logBox,
                 delegate(int pct) { try { BeginInvoke((MethodInvoker)delegate { bar.Value = Math.Min(100, Math.Max(0, pct)); }); } catch { } },
@@ -2989,7 +3003,7 @@ namespace MouseLauncher
             {
                 try
                 {
-                    string vName = mi.InstallForge(mcVer);
+                    string vName = mi.InstallForge(mcVer, fv);
                     BeginInvoke((MethodInvoker)delegate
                     {
                         statusLab.Text = "Forge 安装完成 ✓";
@@ -3009,6 +3023,41 @@ namespace MouseLauncher
                         forgeBtn.Enabled = true; dlBtn.Enabled = true; fabricBtn.Enabled = true; manifestBtn.Enabled = true; verList.Enabled = true;
                     });
                 }
+            });
+        }
+
+        // Forge 版本下拉: 按选中的 MC 版本从 BMCLAPI 拉取 (前 12 个, 首个为最新)
+        void LoadForgeVersions(string mcVer)
+        {
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                List<string> vs = new List<string>();
+                try
+                {
+                    JArray bs = JArray.Parse(Web.GetText("https://bmclapi2.bangbang93.com/forge/minecraft/" + mcVer));
+                    foreach (JObject b in bs)
+                    {
+                        string v = (string)b["version"];
+                        if (!string.IsNullOrEmpty(v) && !vs.Contains(v)) vs.Add(v);
+                        if (vs.Count >= 12) break;
+                    }
+                }
+                catch { }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        try
+                        {
+                            forgeBox.Items.Clear();
+                            forgeBox.Items.Add("最新");
+                            foreach (string v in vs) forgeBox.Items.Add(v);
+                            forgeBox.SelectedIndex = 0;
+                        }
+                        catch { }
+                    });
+                }
+                catch { }
             });
         }
 
