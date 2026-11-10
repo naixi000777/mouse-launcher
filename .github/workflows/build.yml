@@ -1,0 +1,52 @@
+name: build
+
+# 纯构建验证：不依赖任何密钥，每次 push / PR 都可运行。
+# 这是 SignPath "trusted build system" 的基础：证明产物确实由公开仓库源码
+# 在 GitHub-hosted runner 上构建出来，而不是本地编译后上传。
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    # SignPath 对 OSS 项目的硬性要求：签名请求之前的每个 job 都必须在
+    # GitHub-hosted agent 上运行，不能用 self-hosted runner。
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all artifacts
+        shell: pwsh
+        run: .\scripts\build-ci.ps1
+
+      - name: Verify expected outputs
+        shell: pwsh
+        run: |
+          $required = @(
+            'dist/老鼠启动器.exe',
+            'dist/mlc.exe',
+            'dist/老鼠启动器-安装包.exe',
+            'dist/payload.zip'
+          )
+          foreach ($p in $required) {
+            if (-not (Test-Path -LiteralPath $p)) { throw "缺少产物: $p" }
+          }
+          Get-ChildItem -LiteralPath dist | Select-Object Name, Length
+
+      - name: Upload unsigned build
+        uses: actions/upload-artifact@v4
+        with:
+          name: mouse-launcher-unsigned-${{ github.run_id }}
+          path: |
+            dist/老鼠启动器.exe
+            dist/mlc.exe
+            dist/老鼠启动器-安装包.exe
+          if-no-files-found: error
+          retention-days: 7

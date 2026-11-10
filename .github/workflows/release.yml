@@ -1,0 +1,142 @@
+name: release-signing
+
+# SignPath 两阶段签名发布模板。
+#
+# 【申请通过前】把仓库变量 SIGNPATH_ENABLED 留空或不设为 true：
+#   本 workflow 只会构建并上传未签名 artifact，不会验证签名、也不会发布 Release。
+# 【申请通过后】在仓库 Settings → Secrets and variables → Actions 里配置：
+#   variables: SIGNPATH_ENABLED=true, SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG
+#   secrets:   SIGNPATH_API_TOKEN（具备 submitter 权限，绝不可写进代码）
+#   并在 SignPath 侧：安装 GitHub App、关联 Trusted Build System "GitHub.com"、
+#   配置 artifact configuration（windows-binaries / windows-installer）、
+#   配置 signing policy "release-signing"（需人工审批）。
+#
+# 注意：actions/upload-artifact 默认把文件打成 ZIP，因此 SignPath 侧
+# Artifact Configuration 的根元素类型应为 <zip-file>。输出目录里的文件名
+# 以 SignPath 实际配置为准，若不同请调整下面 Copy-Item / 校验 / 上传的路径。
+#
+# 为什么是两次签名请求：安装包把 payload.zip 作为 .NET 嵌入资源编译进 PE，
+# 所以必须先签主程序与 CLI -> 重建 payload.zip -> 重编译安装包 -> 再签安装包。
+# 两次请求都需要在 SignPath UI 里人工批准，请留意审批邮件。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage 1 - build unsigned binaries
+        shell: pwsh
+        run: .\scripts\build-ci.ps1
+
+      - name: Upload unsigned binaries for SignPath request #1
+        id: upload-binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-binaries-${{ github.run_id }}
+          path: |
+            dist/老鼠启动器.exe
+            dist/mlc.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: SignPath - sign main binary and CLI (request #1, needs approval)
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-binaries
+          github-artifact-id: ${{ steps.upload-binaries.outputs.artifact-id }}
+          github-token: ${{ github.token }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-binaries
+
+      - name: Put signed binaries back into dist
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        shell: pwsh
+        run: |
+          Copy-Item -LiteralPath 'signed-binaries/老鼠启动器.exe' -Destination 'dist/老鼠启动器.exe' -Force
+          Copy-Item -LiteralPath 'signed-binaries/mlc.exe'        -Destination 'dist/mlc.exe'        -Force
+
+      - name: Stage 2 - rebuild payload.zip and installer from signed binaries
+        shell: pwsh
+        run: .\scripts\build-ci.ps1 -Stage repack
+
+      - name: Upload unsigned installer for SignPath request #2
+        id: upload-installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-installer-${{ github.run_id }}
+          path: dist/老鼠启动器-安装包.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: SignPath - sign installer (request #2, needs approval)
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-installer
+          github-artifact-id: ${{ steps.upload-installer.outputs.artifact-id }}
+          github-token: ${{ github.token }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-installer
+
+      - name: Verify Authenticode signatures and timestamps
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        shell: pwsh
+        run: |
+          $files = @(
+            'dist/老鼠启动器.exe',
+            'dist/mlc.exe',
+            'signed-installer/老鼠启动器-安装包.exe'
+          )
+          foreach ($f in $files) {
+            if (-not (Test-Path -LiteralPath $f)) { throw "缺少签名产物: $f" }
+            $s = Get-AuthenticodeSignature -FilePath $f
+            if ($s.Status -ne 'Valid') { throw "$f => $($s.Status)" }
+            if (-not $s.TimeStamperCertificate) { throw "$f 缺少 RFC3161 时间戳" }
+            Write-Host "$f => Valid | $($s.SignerCertificate.Subject)"
+          }
+
+      - name: Upload release candidate for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-${{ github.run_id }}
+          path: |
+            dist/老鼠启动器.exe
+            dist/mlc.exe
+            dist/老鼠启动器-安装包.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      # GitHub Release 资产名必须是 ASCII（中文会被 GitHub 剔除）
+      - name: Publish signed installer to GitHub Release
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' && github.event_name == 'push' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          gh release view $tag | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --verify-tag --title $tag --notes "See docs/CODE_SIGNING_POLICY.md"
+          }
+          gh release upload $tag 'signed-installer/老鼠启动器-安装包.exe#MouseLauncher-Setup.exe' --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release 上传失败' }

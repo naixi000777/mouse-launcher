@@ -3,6 +3,9 @@
 *.zip
 *.tmp
 *.part
+dist/
+signed-binaries/
+signed-installer/
 
 # 本地配置与日志
 *.ini

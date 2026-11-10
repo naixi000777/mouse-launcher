@@ -1,6 +1,6 @@
 # 老鼠启动器 MouseLauncher 🐭
 
-by Naixi
+by Naixi · [MIT License](LICENSE)
 
 一个单文件 C# 写的 Minecraft Java 版启动器，深色主题，与 PCL2 共用 `.minecraft` 目录。无需安装 .NET SDK——用 Windows 自带的 .NET Framework 编译器即可构建。
 
@@ -25,9 +25,14 @@ cd 老鼠启动器
 build.bat
 ```
 
+> `build.bat` 是 GBK 编码、末尾带 `pause`，只适合本机中文 Windows。
+> CI / 自动化构建请用 UTF-8 的 `scripts/build-ci.ps1`：
+> `pwsh -File scripts/build-ci.ps1`，产物统一输出到 `dist/`。
+> `.github/workflows/build.yml` 会在每次 push / PR 时用 GitHub 托管 Windows runner 验证完整构建。
+
 产出：`老鼠启动器.exe`（主程序）、`mlc.exe`（命令行版）、`老鼠启动器-安装包.exe`（单文件安装器）。
 
-源码就两个文件：`MouseLauncher.cs`（约 3300 行，全部功能）+ `installer/InstallerStub.cs`（安装向导）。
+源码就两个 C# 文件：`MouseLauncher.cs`（约 3300 行，全部功能）+ `installer/InstallerStub.cs`（安装向导）。
 
 ## 命令行 (mlc.exe)
 
@@ -49,4 +54,10 @@ mlc -stun / -mp-test [丢包%] / -args <版本> / -backup / -crashtest
 
 - 数据源：Mojang 官方（launchermeta / piston / resources.download），失败自动切 BMCLAPI
 - 离线登录（离线 UUID），与 PCL2 互相可见对方安装的版本
-- `Newtonsoft.Json.dll` 来自 PCL2 内嵌资源，随仓库分发以便直接编译
+- `Newtonsoft.Json.dll`：Json.NET（MIT 许可），随仓库分发以便直接编译；来源与第三方声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
+## 许可证与签名状态
+
+- 本项目采用 [MIT License](LICENSE)；第三方组件声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- **当前 Release（v1.1 / v1.1.1）未签名。** 首次运行时 Windows 可能显示「Windows 已保护你的电脑」，点「更多信息 → 仍要运行」即可。
+- 计划通过 [SignPath Foundation](https://signpath.org/) 的免费开源项目代码签名服务为发布产物签名。构建来源、审批与验证规则见 [docs/CODE_SIGNING_POLICY.md](docs/CODE_SIGNING_POLICY.md)。**申请通过前，任何本地自签名产物都不得当作正式签名版本发布。**
