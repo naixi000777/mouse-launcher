@@ -24,6 +24,20 @@
 - 免费个人注册要求**政府签发 ID + 自拍人脸验证 + MFA**，比 SignPath 只需 MFA 更"本人"，完全无法由他人代劳。
 - 本机工具链其实齐全（Windows SDK 10.0.22621.0 带 `makeappx.exe` / `makepri.exe`，且检测到 VS2022 与 dotnet CLI），但工具齐全不改变政策判断。
 
+## 补充：自己封 MSIX 旁加载（实测，不作为方案）
+
+2026-11-11 实测：本机 Windows SDK 10.0.22621.0 带 `makeappx.exe` / `makepri.exe` / `signtool.exe`，配合已有的自签代码签名证书，**能封出结构合法、签名有效的 `.msix`**（1,094,937 字节，`signtool verify /pa` 通过，含 `AppxSignature.p7x`，Identity Publisher 与证书 Subject 完全一致）。产物在仓库外 `D:\mouse-launcher-signing\msix-trial\`，未提交、未安装到系统。
+
+但这**不是**绕过证书的捷径：
+
+- 微软免费重新签名**只发生在 MSIX 提交进 Store 入库时**；自己封的包不自带任何微软签名。
+- MSIX 必须签名且证书被目标机器信任才能安装。自签证书在别人机器上是**直接拒绝安装**，不像 exe 还能点「仍要运行」；要么让对方以管理员身份把 `.cer` 导入 TrustedPeople / 受信任根，要么买 CA 受信任证书（OV 约 $150–300/年，或 Azure Artifact Signing 约 $10/月但个人仅限美加）。
+- 直接下载分发的 MSIX 依然要按下载量积累 SmartScreen 信誉；`ms-appinstaller:` 一键安装协议自 2023-12 起默认禁用。
+- 实际踩坑：`makeappx` 把非 ASCII 文件名按 OPC 规则编码（中文 `老鼠启动器.exe` → `%E8%80%81...exe`），与 manifest 的 `Executable` 对不上，包装上会找不到主程序；必须把包内主程序改成 ASCII 名（如 `MouseLauncher.exe`），显示名仍可用中文。
+- 即使装得上，`MouseLauncher.cs:336` 写 ini 到安装目录在 MSIX 下会失败（安装目录只读），AppData 虚拟化还会分裂 `.minecraft` 数据 —— 需要改代码。
+
+唯一好处：旁加载不上架，因此不受 Store 政策 10.1.5 / 10.2.2 审核，卸载干净、可用 `.appinstaller` 自动更新。但证书问题一分没少，改造成本反而更高。
+
 ## 采用的方案对比
 
 | 方案 | 成本 | 分发渠道 | 首次 SmartScreen | 主要代价 |
