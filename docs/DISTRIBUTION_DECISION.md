@@ -32,6 +32,7 @@
 
 - 微软免费重新签名**只发生在 MSIX 提交进 Store 入库时**；自己封的包不自带任何微软签名。
 - MSIX 必须签名且证书被目标机器信任才能安装。自签证书在别人机器上是**直接拒绝安装**，不像 exe 还能点「仍要运行」；要么让对方以管理员身份把 `.cer` 导入 TrustedPeople / 受信任根，要么买 CA 受信任证书（OV 约 $150–300/年，或 Azure Artifact Signing 约 $10/月但个人仅限美加）。
+- **本机实测（11-12）**：只把证书放进 `CurrentUser\Root` / `CurrentUser\TrustedPublisher` **不够**，双击安装仍报 `0x800B0109 CERT_E_UNTRUSTEDROOT（根证书必须是受信任的证书）`。App Installer 验的是**本机级**存储，必须导入 `LocalMachine\TrustedPeople`（需管理员提权）。修复脚本见 `D:\mouse-launcher-signing\msix-trial\trust-for-sideload.ps1`。连自己机器都要手工加信任，正说明自签 MSIX 不可能对外分发。
 - 直接下载分发的 MSIX 依然要按下载量积累 SmartScreen 信誉；`ms-appinstaller:` 一键安装协议自 2023-12 起默认禁用。
 - 实际踩坑：`makeappx` 把非 ASCII 文件名按 OPC 规则编码（中文 `老鼠启动器.exe` → `%E8%80%81...exe`），与 manifest 的 `Executable` 对不上，包装上会找不到主程序；必须把包内主程序改成 ASCII 名（如 `MouseLauncher.exe`），显示名仍可用中文。
 - 即使装得上，`MouseLauncher.cs:336` 写 ini 到安装目录在 MSIX 下会失败（安装目录只读），AppData 虚拟化还会分裂 `.minecraft` 数据 —— 需要改代码。
